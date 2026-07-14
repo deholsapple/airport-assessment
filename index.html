@@ -3,21 +3,27 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; connect-src 'self' https://aviationweather.gov; style-src 'self' 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; object-src 'none'; form-action 'none';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; connect-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; object-src 'none'; form-action 'none';">
 <title>Airport Suitability Report Generator</title>
-<script src="https://cdn.jsdelivr.net/npm/docx@9.7.1/dist/index.iife.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script src="vendor/docx.iife.js"></script>
 <script src="airport-data.js"></script>
 <script src="fbo-data.js"></script>
+<script src="report/report-data.js"></script>
+<script src="report/docx-builder.js"></script>
 <style>
   :root{
-    --navy:#0b2540;
-    --navy-dark:#081b30;
+    --navy:#1F3864;
+    --navy-dark:#152a4d;
     --accent:#c8102e;
-    --amber:#b5720a;
+    --amber:#BF8F00;
     --amber-bg:#fff6e5;
     --amber-border:#e8b552;
-    --ok:#1a7a3c;
+    --gold:#7F6000;
+    --gold-bg:#FFF2CC;
+    --gold-border:#e8d67f;
+    --ok:#375623;
     --ok-bg:#e9f7ee;
+    --fail:#C00000;
     --fail-bg:#fdecec;
     --fail-border:#e0a3a3;
     --gray-50:#f7f8fa;
@@ -62,6 +68,11 @@
     border-radius:var(--radius);padding:12px 16px;margin:18px 0;font-size:.85rem;
   }
   .disclaimer strong{color:var(--amber);}
+  .banner-unverified{
+    background:#fdecec;border:1px solid var(--fail-border);color:var(--fail);
+    border-radius:var(--radius);padding:12px 16px;margin:18px 0;font-size:.88rem;font-weight:600;
+  }
+  .banner-unverified span{display:block;font-weight:400;color:#7a1414;margin-top:4px;font-size:.82rem;}
   .card{
     background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius);
     margin-bottom:18px;box-shadow:0 1px 2px rgba(20,30,40,.04);
@@ -80,22 +91,16 @@
   .card-body{padding:16px 18px;}
   .card-sub{font-size:.78rem;color:var(--gray-600);margin:-6px 0 12px;}
   .grid{display:grid;gap:12px;}
-  .grid.cols-2{grid-template-columns:repeat(2,minmax(0,1fr));}
   .grid.cols-3{grid-template-columns:repeat(3,minmax(0,1fr));}
   .grid.cols-4{grid-template-columns:repeat(4,minmax(0,1fr));}
-  @media (max-width:820px){
-    .grid.cols-2,.grid.cols-3,.grid.cols-4{grid-template-columns:1fr 1fr;}
-  }
-  @media (max-width:560px){
-    .grid.cols-2,.grid.cols-3,.grid.cols-4{grid-template-columns:1fr;}
-  }
+  @media (max-width:820px){ .grid.cols-3,.grid.cols-4{grid-template-columns:1fr 1fr;} }
+  @media (max-width:560px){ .grid.cols-3,.grid.cols-4{grid-template-columns:1fr;} }
   label{display:block;font-size:.72rem;font-weight:600;color:var(--gray-600);text-transform:uppercase;letter-spacing:.03em;margin-bottom:4px;}
-  input[type=text],input[type=number],input[type=date],select,textarea{
+  input[type=text],input[type=date],select{
     width:100%;padding:9px 10px;border:1px solid var(--gray-200);border-radius:6px;
     font-size:.92rem;font-family:inherit;background:#fff;color:var(--gray-800);
   }
-  input:focus,select:focus,textarea:focus{outline:2px solid var(--navy);outline-offset:1px;border-color:var(--navy);}
-  textarea{resize:vertical;min-height:60px;}
+  input:focus,select:focus{outline:2px solid var(--navy);outline-offset:1px;border-color:var(--navy);}
   .field{margin-bottom:0;}
   .row-inline{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;}
   button{
@@ -108,10 +113,6 @@
   .btn-primary:hover:not(:disabled){background:var(--navy-dark);}
   .btn-secondary{background:#fff;color:var(--navy);border-color:var(--navy);}
   .btn-secondary:hover:not(:disabled){background:var(--gray-100);}
-  .btn-danger{background:#fff;color:var(--accent);border-color:var(--accent);padding:6px 10px;font-size:.75rem;}
-  .btn-danger:hover:not(:disabled){background:var(--fail-bg);}
-  .btn-add{background:#fff;color:var(--ok);border:1px dashed var(--ok);width:100%;padding:10px;}
-  .btn-add:hover{background:var(--ok-bg);}
   table{width:100%;border-collapse:collapse;font-size:.85rem;}
   th,td{border:1px solid var(--gray-200);padding:7px 9px;text-align:left;vertical-align:top;}
   th{background:var(--gray-50);font-size:.7rem;text-transform:uppercase;letter-spacing:.03em;color:var(--gray-600);}
@@ -119,21 +120,17 @@
   .status-ok{background:var(--ok-bg);color:var(--ok);border:1px solid #b9e3c6;}
   .status-err{background:var(--fail-bg);color:#8a1f1f;border:1px solid var(--fail-border);}
   .status-wait{background:var(--gray-100);color:var(--gray-600);border:1px solid var(--gray-200);}
-  .runway-card{border:1px solid var(--gray-200);border-radius:8px;padding:14px;margin-bottom:14px;background:var(--gray-50);}
-  .runway-card .rw-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;}
-  .runway-card .rw-head h3{margin:0;font-size:.9rem;color:var(--navy);}
-  .pill{display:inline-block;font-size:.68rem;font-weight:700;padding:2px 8px;border-radius:999px;letter-spacing:.03em;text-transform:uppercase;}
-  .pill-pass{background:var(--ok-bg);color:var(--ok);}
-  .pill-fail{background:var(--fail-bg);color:#8a1f1f;}
-  .pill-warn{background:var(--amber-bg);color:var(--amber);}
   .matrix-wrap{overflow-x:auto;}
-  .warning-list{list-style:none;margin:0;padding:0;}
-  .warning-list li{
-    background:var(--amber-bg);border:1px solid var(--amber-border);border-left:4px solid var(--amber);
-    padding:9px 12px;border-radius:6px;margin-bottom:8px;font-size:.85rem;color:#5c3f04;
-  }
-  .warning-list li.crit{background:var(--fail-bg);border-color:var(--fail-border);border-left-color:var(--accent);color:#7a1414;}
-  .warning-list .empty{background:var(--ok-bg);border:1px solid #b9e3c6;color:var(--ok);border-left:4px solid var(--ok);}
+  .pill{display:inline-block;font-size:.68rem;font-weight:700;padding:2px 8px;border-radius:999px;letter-spacing:.03em;text-transform:uppercase;}
+  .pill-PASS{background:var(--ok-bg);color:var(--ok);}
+  .pill-FAIL{background:var(--fail-bg);color:var(--fail);}
+  .pill-CAUTION{background:var(--amber-bg);color:var(--amber);}
+  .pill-UNKNOWN,.pill-CONFIRM,.pill-NOTAVAILABLE{background:var(--gold-bg);color:var(--gold);}
+  .pill-NOTEVALUATED{background:var(--gray-100);color:var(--gray-600);}
+  .pill-SUITABLE{background:var(--ok-bg);color:var(--ok);}
+  .pill-SUITABLEWITHLIMITATIONS{background:var(--amber-bg);color:var(--amber);}
+  .pill-NOTSUITABLE{background:var(--fail-bg);color:var(--fail);}
+  .fbo-banner{background:var(--gold-bg);border:1px solid var(--gold-border);color:var(--gold);border-radius:6px;padding:10px 12px;font-size:.82rem;margin-bottom:10px;}
   footer.action-bar{
     position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid var(--gray-200);
     padding:12px clamp(14px,3vw,32px);box-shadow:0 -2px 8px rgba(0,0,0,.06);z-index:40;
@@ -141,11 +138,7 @@
   footer.action-bar .inner{max-width:var(--maxw);margin:0 auto;display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;}
   .gen-status{font-size:.8rem;color:var(--gray-600);}
   .small-note{font-size:.72rem;color:var(--gray-400);margin-top:4px;}
-  .checkbox-row{display:flex;align-items:center;gap:8px;font-size:.85rem;color:var(--gray-800);}
-  .checkbox-row input{width:auto;}
-  .field-required::after{content:" *";color:var(--accent);}
-  .two-col-compare{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
-  @media (max-width:600px){.two-col-compare{grid-template-columns:1fr;}}
+  .preview-hidden{display:none;}
 </style>
 </head>
 <body>
@@ -154,7 +147,7 @@
   <div class="header-row">
     <div>
       <h1>Airport Suitability Report Generator</h1>
-      <div class="subtitle">Standard layout &middot; Sections 1&ndash;9</div>
+      <div class="subtitle">Falcon 50EX / Gulfstream G280 &middot; NASR + criteria.json &middot; Sections 1&ndash;10</div>
     </div>
     <span class="badge">Client-side &middot; no server</span>
   </div>
@@ -162,1238 +155,324 @@
 
 <main>
 
-  <div class="disclaimer" id="dataDisclaimer">
-    <strong>Data currency notice:</strong> Fields marked <em>(auto)</em> populate primarily from an embedded FAA 28-Day NASR
-    dataset bundled with this app (<span id="nasrCycleNote">dataset not loaded</span>), with the live
-    <a href="https://aviationweather.gov/" target="_blank" rel="noopener noreferrer">aviationweather.gov</a> API and manual
-    entry as fallbacks. This data goes stale on the FAA's 28-day publication cycle, and instrument-approach availability
-    (RNAV/GPS approaches in particular) is <strong>not</strong> represented in this dataset at all &mdash; the app never infers
-    "VFR only" from missing data. Always verify safety-critical fields against the current FAA Chart Supplement and NOTAMs
-    before release. This tool does not replace dispatch/Chief Pilot verification.
+  <div class="disclaimer">
+    <strong>Data currency notice:</strong> Airport facts (runways, frequencies, tower, remarks, attendance) come from the
+    embedded FAA 28-Day NASR dataset (<span id="nasrCycleNote">dataset not loaded</span>). Anything NASR doesn't carry
+    prints as <strong>NOT AVAILABLE</strong> and is listed in &sect;8, Items Requiring Verification &mdash; it is never
+    guessed. FBO data is separately researched (not from NASR) and any unconfirmed FBO fact prints as
+    <strong>CONFIRM</strong>. Always verify safety-critical fields against the current FAA Chart Supplement and NOTAMs
+    before dispatch.
   </div>
 
-  <!-- Report metadata -->
-  <section class="card">
-    <div class="card-head"><h2><span class="section-num">i</span>Report Metadata</h2></div>
-    <div class="card-body">
-      <div class="grid cols-4">
-        <div class="field"><label for="companyName">Company / Operator</label><input type="text" id="companyName" placeholder="e.g. Acme Aviation LLC" value="PACCAR"></div>
-        <div class="field"><label for="preparedBy">Prepared By</label><input type="text" id="preparedBy" placeholder="Name / title"></div>
-        <div class="field"><label for="reportDate">Report Date</label><input type="date" id="reportDate"></div>
-        <div class="field"><label for="tailNumber">Aircraft Registration</label><input type="text" id="tailNumber" placeholder="e.g. N123AB"></div>
-      </div>
-    </div>
-  </section>
+  <div class="banner-unverified" id="criteriaBanner" style="display:none;">
+    CRITERIA NOT VERIFIED
+    <span>One or more thresholds in criteria.json have not been reviewed against the AFM / ops specs. Every criterion
+    depending on an unset threshold reads NOT EVALUATED in the generated report. Do not use for dispatch.</span>
+  </div>
 
-  <!-- ICAO fetch -->
+  <!-- Lookup -->
   <section class="card">
-    <div class="card-head"><h2><span class="section-num">⌕</span>Airport Lookup</h2></div>
+    <div class="card-head"><h2><span class="section-num">⌕</span>Generate Report</h2></div>
     <div class="card-body">
       <div class="row-inline">
         <div class="field" style="max-width:180px;">
-          <label for="icaoInput" class="field-required">ICAO Identifier</label>
+          <label for="icaoInput">ICAO Identifier</label>
           <input type="text" id="icaoInput" maxlength="4" placeholder="ICAO" autocomplete="off" spellcheck="false" style="text-transform:uppercase;letter-spacing:.08em;font-weight:600;">
         </div>
-        <button class="btn-primary" id="fetchBtn" type="button">Fetch Airport Data</button>
-        <div class="field" style="max-width:280px;">
-          <label for="aircraftSelect" class="field-required">Aircraft Profile</label>
-          <select id="aircraftSelect"></select>
-        </div>
+        <button class="btn-primary" id="previewBtn" type="button">Preview</button>
+        <button class="btn-secondary" id="generateBtn" type="button" disabled>Download .docx</button>
       </div>
-      <div id="fetchStatus" class="status-msg status-wait" role="status">Enter a 4-letter ICAO identifier and click Fetch.</div>
+      <div id="fetchStatus" class="status-msg status-wait" role="status">Enter a 4-letter ICAO identifier and click Preview.</div>
     </div>
   </section>
 
-  <!-- Section 1: General Airport Information -->
-  <section class="card">
-    <div class="card-head"><h2><span class="section-num">1</span>General Airport Information</h2></div>
-    <div class="card-body">
-      <div class="card-sub">Fields marked (auto) populate from the embedded FAA dataset or live API when available; verify before use.</div>
-      <div class="grid cols-4" id="section1Grid">
-        <div class="field"><label>ICAO (auto)</label><input type="text" id="g_icao" readonly></div>
-        <div class="field"><label>FAA / IATA ID (auto)</label><input type="text" id="g_faaIata" readonly></div>
-        <div class="field"><label>Airport Name (auto)</label><input type="text" id="g_name"></div>
-        <div class="field"><label>City / State (auto)</label><input type="text" id="g_cityState"></div>
-        <div class="field"><label>Latitude / Longitude (auto)</label><input type="text" id="g_latlon" readonly></div>
-        <div class="field"><label>Field Elevation (ft, auto)</label><input type="text" id="g_elev" readonly></div>
-        <div class="field"><label>Magnetic Variation (auto)</label><input type="text" id="g_magdec" readonly></div>
-        <div class="field"><label>Time Zone</label><input type="text" id="g_tz" placeholder="e.g. UTC-6 / CST"></div>
-        <div class="field"><label>Ownership / Use</label><input type="text" id="g_ownership" placeholder="Public / Private"></div>
-        <div class="field"><label>Airport Reference Point Notes</label><input type="text" id="g_arp"></div>
-        <div class="field"><label>Fuel Available</label><input type="text" id="g_fuel" placeholder="Jet A, 100LL"></div>
-        <div class="field"><label>ARFF / Fire-Rescue Index</label><input type="text" id="g_arff"></div>
-        <div class="field"><label>Customs / Immigration</label><input type="text" id="g_customs" placeholder="Available Y/N, hours"></div>
-        <div class="field"><label>Operating Hours</label><input type="text" id="g_hours" placeholder="24/7 or published hours"></div>
-        <div class="field"><label>Beacon (auto)</label><input type="text" id="g_beacon" readonly></div>
-        <div class="field"><label>Control Tower (auto)</label><input type="text" id="g_tower" readonly></div>
-      </div>
-      <div class="small-note" id="rawFieldsNote"></div>
-    </div>
-  </section>
+  <!-- Preview -->
+  <div id="previewRoot" class="preview-hidden">
 
-  <!-- Section 2: Communications & Frequencies -->
-  <section class="card">
-    <div class="card-head">
-      <h2><span class="section-num">2</span>Communications &amp; Frequencies</h2>
-    </div>
-    <div class="card-body">
-      <div class="card-sub">Auto-populates from the embedded FAA dataset when available (CTAF/UNICOM/RCAG/ASOS-AWOS/RCO); verify against current Chart Supplement / NOTAMs and add Tower/Ground/Approach/Departure/Clearance as needed.</div>
-      <div class="matrix-wrap">
-        <table id="freqTable">
-          <thead><tr><th style="width:28%">Facility</th><th style="width:20%">Frequency</th><th>Remarks</th><th style="width:40px;"></th></tr></thead>
-          <tbody></tbody>
-        </table>
+    <section class="card">
+      <div class="card-head"><h2><span class="section-num">1</span>Determination</h2></div>
+      <div class="card-body">
+        <div class="matrix-wrap"><table id="tblDetermination"><thead><tr><th>Aircraft</th><th>Determination</th><th>Qualifying Runways</th></tr></thead><tbody></tbody></table></div>
+        <div id="determinationNotes" class="small-note"></div>
       </div>
-      <button class="btn-add" type="button" id="addFreqRow" style="margin-top:10px;">+ Add Frequency Row</button>
-    </div>
-  </section>
+    </section>
 
-  <!-- Section 3: Runway Analysis -->
-  <section class="card">
-    <div class="card-head"><h2><span class="section-num">3</span>Runway Analysis</h2></div>
-    <div class="card-body">
-      <div class="card-sub">Auto-populates from the embedded FAA dataset when available, including surface condition, markings condition, lighting, and weight-bearing capacity. Verify before use &mdash; see disclaimer above.</div>
-      <div id="runwayList"></div>
-      <button class="btn-add" type="button" id="addRunway">+ Add Runway</button>
-      <h3 style="font-size:.85rem;color:var(--navy);margin:18px 0 8px;">Aircraft Comparison Matrix</h3>
-      <div class="matrix-wrap">
-        <table id="matrixTable">
-          <thead><tr><th>Runway</th><th>Length</th><th>Width</th><th>Length vs Min</th><th>Width vs Min</th><th>Crosswind vs Max</th><th>Overall</th></tr></thead>
-          <tbody></tbody>
-        </table>
+    <section class="card">
+      <div class="card-head"><h2><span class="section-num">2</span>Facility</h2></div>
+      <div class="card-body">
+        <div class="card-sub">From FAA NASR. Authoritative.</div>
+        <div class="grid cols-4" id="facilityGrid"></div>
+        <div class="small-note" style="margin-top:10px;font-weight:700;color:var(--gray-600);">NASR REMARKS</div>
+        <ul id="remarksList" style="margin:6px 0 0;padding-left:18px;font-size:.85rem;"></ul>
       </div>
-    </div>
-  </section>
+    </section>
 
-  <!-- Section 4: Obstacle, Terrain & Approach -->
-  <section class="card">
-    <div class="card-head"><h2><span class="section-num">4</span>Obstacle, Terrain &amp; Approach Environment</h2></div>
-    <div class="card-body">
-      <div class="grid cols-2">
-        <div class="field"><label for="s4_terrain">Terrain Notes</label><textarea id="s4_terrain" placeholder="Surrounding terrain, rising ground, water, etc."></textarea></div>
-        <div class="field"><label for="s4_obstacles">Obstacle Notes</label><textarea id="s4_obstacles" placeholder="Towers, high ground, lighting of obstacles, etc."></textarea></div>
+    <section class="card">
+      <div class="card-head"><h2><span class="section-num">3</span>Communications</h2></div>
+      <div class="card-body">
+        <div class="matrix-wrap"><table id="tblComms"><thead><tr><th>Facility</th><th>Frequency</th><th>Use</th><th>Notes</th></tr></thead><tbody></tbody></table></div>
       </div>
-      <h3 style="font-size:.85rem;color:var(--navy);margin:16px 0 8px;">Automated Warnings (from Runway Analysis)</h3>
-      <ul class="warning-list" id="warningList"></ul>
-    </div>
-  </section>
+    </section>
 
-  <!-- Section 5: Weather & Alternates -->
-  <section class="card">
-    <div class="card-head"><h2><span class="section-num">5</span>Weather &amp; Alternates</h2></div>
-    <div class="card-body">
-      <div class="grid cols-3">
-        <div class="field"><label>METAR / TAF Station (auto)</label><input type="text" id="s5_station" readonly></div>
-        <div class="field"><label>Typical / Seasonal Hazards</label><input type="text" id="s5_hazards" placeholder="Fog, convective, icing, LLWS..."></div>
-        <div class="field"><label>Weather Source Notes</label><input type="text" id="s5_wxnotes"></div>
+    <section class="card">
+      <div class="card-head"><h2><span class="section-num">4</span>Runway Evaluation &mdash; All Runways</h2></div>
+      <div class="card-body">
+        <div class="matrix-wrap"><table id="tblRunways"><thead><tr id="runwayHead"></tr></thead><tbody></tbody></table></div>
       </div>
-      <h3 style="font-size:.85rem;color:var(--navy);margin:16px 0 8px;">Alternates</h3>
-      <div class="matrix-wrap">
-        <table id="altTable">
-          <thead><tr><th style="width:15%">ICAO</th><th style="width:30%">Name</th><th style="width:15%">Distance</th><th>Notes</th><th style="width:40px;"></th></tr></thead>
-          <tbody></tbody>
-        </table>
-      </div>
-      <button class="btn-add" type="button" id="addAlt" style="margin-top:10px;">+ Add Alternate</button>
-    </div>
-  </section>
+    </section>
 
-  <!-- Section 6: FBO & Handling -->
-  <section class="card">
-    <div class="card-head"><h2><span class="section-num">6</span>FBO &amp; Handling</h2></div>
-    <div class="card-body">
-      <div class="card-sub">FBOs aren't in any FAA dataset (they're private businesses) — this list is only whatever's been manually researched so far. No entry for this airport just means none has been looked up yet, not that none exists.</div>
-      <div class="row-inline" style="margin-bottom:12px;">
-        <div class="field" style="max-width:340px;">
-          <label for="fboSelect">Researched FBOs</label>
-          <select id="fboSelect"><option value="">— No airport looked up yet —</option></select>
-        </div>
-        <button class="btn-secondary" id="addFboFromSelect" type="button">+ Add Selected FBO</button>
-        <a class="btn-secondary" id="airnavLink" href="https://www.airnav.com/" target="_blank" rel="noopener noreferrer"
-           style="text-decoration:none;display:inline-flex;align-items:center;opacity:.5;pointer-events:none;">Look Up FBOs on AirNav ↗</a>
+    <section class="card">
+      <div class="card-head"><h2><span class="section-num">5</span>Criteria Evaluation</h2></div>
+      <div class="card-body">
+        <div id="criteriaTables"></div>
+        <div class="small-note">NOT EVALUATED = threshold not yet set in criteria.json. UNKNOWN = threshold set, but NASR has no actual value to compare.</div>
       </div>
-      <div class="matrix-wrap">
-        <table id="fboTable">
-          <thead><tr>
-            <th>FBO Name</th><th>Phone</th><th>Fuel (Type/Price)</th><th>GPU</th><th>De-Ice</th><th>Hangar</th><th>Hours</th><th style="width:40px;"></th>
-          </tr></thead>
-          <tbody></tbody>
-        </table>
-      </div>
-      <button class="btn-add" type="button" id="addFbo" style="margin-top:10px;">+ Add FBO</button>
-    </div>
-  </section>
+    </section>
 
-  <!-- Section 7: Key Phone Numbers -->
-  <section class="card">
-    <div class="card-head"><h2><span class="section-num">7</span>Key Phone Numbers</h2></div>
-    <div class="card-body">
-      <div class="matrix-wrap">
-        <table id="phoneTable">
-          <thead><tr><th style="width:30%">Role / Contact</th><th style="width:25%">Phone</th><th>Notes</th><th style="width:40px;"></th></tr></thead>
-          <tbody></tbody>
-        </table>
+    <section class="card">
+      <div class="card-head"><h2><span class="section-num">6</span>Services and FBO</h2></div>
+      <div class="card-body">
+        <div class="fbo-banner">NOT FROM NASR &mdash; CONFIRM BY PHONE. FBO services, hours, and fuel change without notice.</div>
+        <div class="matrix-wrap"><table id="tblFbo"><thead><tr><th>FBO</th><th>Phone</th><th>Fuel</th><th>Services</th></tr></thead><tbody></tbody></table></div>
       </div>
-      <button class="btn-add" type="button" id="addPhone" style="margin-top:10px;">+ Add Contact</button>
-    </div>
-  </section>
+    </section>
 
-  <!-- Section 8: Automated Crew Notes & Remarks -->
-  <section class="card">
-    <div class="card-head"><h2><span class="section-num">8</span>Automated Crew Notes &amp; Remarks</h2></div>
-    <div class="card-body">
-      <div class="card-sub">Regenerated automatically from Sections 3 &amp; 4. Add any additional crew notes below.</div>
-      <ul class="warning-list" id="crewNotesAuto"></ul>
-      <div class="field" style="margin-top:10px;">
-        <label for="s8_manual">Additional Crew Notes</label>
-        <textarea id="s8_manual" placeholder="Any additional notes for the crew..."></textarea>
-      </div>
-    </div>
-  </section>
+    <section class="card">
+      <div class="card-head"><h2><span class="section-num">7</span>Disqualifying Findings</h2></div>
+      <div class="card-body"><ul id="findingsList" style="margin:0;padding-left:18px;font-size:.85rem;"></ul></div>
+    </section>
 
-  <!-- Section 9: Chief Pilot Concurrence -->
-  <section class="card">
-    <div class="card-head"><h2><span class="section-num">9</span>Chief Pilot Concurrence &amp; Signature Block</h2></div>
-    <div class="card-body">
-      <div class="field" style="margin-bottom:12px;">
-        <label for="s9_statement">Concurrence Statement</label>
-        <textarea id="s9_statement">I have reviewed this Airport Suitability Report and concur that the airport meets company standards for the aircraft type indicated, subject to the notes and warnings above and independent verification of current NOTAMs, weather, and performance data prior to dispatch.</textarea>
+    <section class="card">
+      <div class="card-head"><h2><span class="section-num">8</span>Items Requiring Verification</h2></div>
+      <div class="card-body">
+        <div class="card-sub">Auto-generated. Every data point the source could not supply becomes an action item.</div>
+        <div class="matrix-wrap"><table id="tblVerification"><thead><tr><th style="width:6%">#</th><th>Item</th><th>Action</th></tr></thead><tbody></tbody></table></div>
       </div>
-      <div class="grid cols-3">
-        <div class="field"><label for="s9_name">Chief Pilot Name</label><input type="text" id="s9_name"></div>
-        <div class="field"><label for="s9_title">Title</label><input type="text" id="s9_title" value="Chief Pilot"></div>
-        <div class="field"><label for="s9_date">Date</label><input type="date" id="s9_date"></div>
-      </div>
-    </div>
-  </section>
+    </section>
 
-  <!-- Report Log (local history, not part of the generated report) -->
-  <section class="card">
-    <div class="card-head"><h2><span class="section-num">&#128220;</span>Report Log</h2></div>
-    <div class="card-body">
-      <div class="card-sub">Records every report generated from this browser on this computer, stored locally (not part of the .docx itself, and not shared across other machines/browsers). Export to CSV to archive or share.</div>
-      <div class="matrix-wrap">
-        <table id="reportLogTable">
-          <thead><tr><th style="width:18%">Generated</th><th style="width:10%">ICAO</th><th>Airport Name</th><th style="width:16%">Aircraft</th><th style="width:14%">Company</th><th>Filename</th></tr></thead>
-          <tbody></tbody>
-        </table>
-      </div>
-      <div class="row-inline" style="margin-top:10px;">
-        <button class="btn-secondary" id="exportLogBtn" type="button">Export Log as CSV</button>
-        <button class="btn-danger" id="clearLogBtn" type="button" style="padding:9px 16px;font-size:.85rem;">Clear Log</button>
-      </div>
-    </div>
-  </section>
+  </div>
 
 </main>
 
 <footer class="action-bar">
   <div class="inner">
     <span class="gen-status" id="genStatus"></span>
-    <div style="display:flex;gap:10px;">
-      <button class="btn-secondary" id="resetBtn" type="button">Reset Form</button>
-      <button class="btn-primary" id="generateBtn" type="button">Generate .docx Report</button>
-    </div>
   </div>
 </footer>
 
 <script>
 "use strict";
 
-/* ---------------------------------------------------------------------
-   Utility helpers
---------------------------------------------------------------------- */
 function $(id){ return document.getElementById(id); }
-function el(tag, attrs, children){
-  var node = document.createElement(tag);
-  attrs = attrs || {};
-  Object.keys(attrs).forEach(function(k){
-    if(k === "class") node.className = attrs[k];
-    else if(k === "text") node.textContent = attrs[k];
-    else if(k.indexOf("on") === 0 && typeof attrs[k] === "function") node.addEventListener(k.slice(2), attrs[k]);
-    else node.setAttribute(k, attrs[k]);
-  });
-  (children || []).forEach(function(c){ if(c) node.appendChild(c); });
-  return node;
-}
-function clamp(n, min, max){ return Math.max(min, Math.min(max, n)); }
-function safeNum(v){ var n = parseFloat(v); return isFinite(n) ? n : null; }
-
-/* ---------------------------------------------------------------------
-   Aircraft profiles
---------------------------------------------------------------------- */
-var AIRCRAFT_PROFILES = {
-  falcon50ex: { name: "Falcon 50EX", minRunway: 5000, minWidth: 100, maxCrosswind: 25 },
-  g280:       { name: "Gulfstream G280", minRunway: 5000, minWidth: 100, maxCrosswind: 30 }
-};
-
-(function initAircraftSelect(){
-  var sel = $("aircraftSelect");
-  Object.keys(AIRCRAFT_PROFILES).forEach(function(key){
-    var p = AIRCRAFT_PROFILES[key];
-    var opt = el("option", { value: key });
-    opt.textContent = p.name + " (min " + p.minRunway + "ft x " + p.minWidth + "ft, max Xwind " + p.maxCrosswind + "kt)";
-    sel.appendChild(opt);
-  });
-  sel.addEventListener("change", function(){ renderMatrix(); renderWarnings(); });
-})();
-
-/* ---------------------------------------------------------------------
-   Application state
---------------------------------------------------------------------- */
-var state = {
-  runways: [],   // { rwId, length, width, surface, condition, weightBearing, lighting, end1Id, end1Approach, end2Id, end2Approach, crosswind }
-  rawApi: null
-};
-var rwCounter = 0;
-
-var SURFACE_CODE_MAP = {
-  A: "Asphalt", C: "Concrete", G: "Gravel", D: "Dirt", T: "Turf/Grass",
-  S: "Sand", W: "Water", M: "Matting/Membrane", AC: "Asphalt/Concrete", CA: "Concrete/Asphalt"
-};
-
-/* ---------------------------------------------------------------------
-   FAA NASR embedded dataset — code-value maps (per FAA "APT DATA LAYOUT"
-   28-Day NASR Subscription documentation)
---------------------------------------------------------------------- */
-var NASR_SURFACE_MAP = {
-  CONC: "Concrete", ASPH: "Asphalt", SNOW: "Snow", ICE: "Ice", MATS: "Mats/Membrane/PSP",
-  TREATED: "Treated (oiled/soil cement/lime stabilized)", GRAVEL: "Gravel", TURF: "Turf/Grass",
-  DIRT: "Dirt", PEM: "Partially concrete/asphalt/bitumen-bound macadam", "ROOF-TOP": "Roof-top",
-  WATER: "Water", ALUMINUM: "Aluminum", BRICK: "Brick", CALICHE: "Caliche", CORAL: "Coral",
-  DECK: "Deck", GRASS: "Grass", METAL: "Metal", NSTD: "Non-standard", "OIL&CHIP": "Oil & chip",
-  PSP: "Pierced steel planking", SAND: "Sand", SOD: "Sod", STEEL: "Steel", TRTD: "Treated", WOOD: "Wood"
-};
-var NASR_OWNERSHIP_MAP = {
-  PU: "Publicly owned", PR: "Privately owned", MA: "Air Force owned", MN: "Navy owned",
-  MR: "Army owned", CG: "Coast Guard owned"
-};
-var NASR_LIGHTING_MAP = {
-  HIGH: "High intensity edge lighting", MED: "Medium intensity edge lighting",
-  LOW: "Low intensity edge lighting", FLD: "Flood lighting", NSTD: "Non-standard lighting system",
-  PERI: "Perimeter lighting", STRB: "Strobe", NONE: "No edge lighting"
-};
-var NASR_VGSI_MAP = {
-  S2L: "2-box SAVASI (left)", S2R: "2-box SAVASI (right)", V2L: "2-box VASI (left)", V2R: "2-box VASI (right)",
-  V4L: "4-box VASI (left)", V4R: "4-box VASI (right)", V6L: "6-box VASI (left)", V6R: "6-box VASI (right)",
-  V12: "12-box VASI (both sides)", V16: "16-box VASI (both sides)",
-  P2L: "2-light PAPI (left)", P2R: "2-light PAPI (right)", P4L: "4-light PAPI (left)", P4R: "4-light PAPI (right)",
-  NSTD: "Non-standard VASI", PVT: "Private approach slope indicator", VAS: "Non-specific VASI",
-  NONE: "None", N: "None", TRIL: "Tri-color VASI (left)", TRIR: "Tri-color VASI (right)",
-  PSIL: "Pulsating/steady VASI (left)", PSIR: "Pulsating/steady VASI (right)"
-};
-var NASR_MARKING_COND_MAP = { G: "Good", F: "Fair", P: "Poor" };
-var NASR_MARKING_TYPE_MAP = {
-  PIR: "Precision instrument", NPI: "Non-precision instrument", BSC: "Basic", NRS: "Numbers only",
-  NSTD: "Non-standard", BUOY: "Buoys (seaplane base)", STOL: "Short takeoff and landing", NONE: "None"
-};
-
-function mapCode(map, code){
-  if(!code) return "";
-  var key = String(code).toUpperCase().trim();
-  return map[key] || key;
-}
-
-/* ---------------------------------------------------------------------
-   Section 2 / 5 / 6 / 7 row builders (generic tabular repeaters)
---------------------------------------------------------------------- */
-function makeTextCell(placeholder, value){
-  var td = document.createElement("td");
-  var input = el("input", { type: "text", placeholder: placeholder || "" });
-  if(value) input.value = value;
-  td.appendChild(input);
-  return { td: td, input: input };
-}
-function makeRemoveCell(onRemove){
-  var td = document.createElement("td");
-  var btn = el("button", { class: "btn-danger", type: "button", text: "✕", onclick: onRemove });
-  td.appendChild(btn);
-  return td;
-}
-function addGenericRow(tbodyId, cols){
-  var tbody = document.querySelector("#" + tbodyId + " tbody");
-  var tr = document.createElement("tr");
-  cols.forEach(function(c){
-    var cell = makeTextCell(c.placeholder, c.value);
-    tr.appendChild(cell.td);
-  });
-  tr.appendChild(makeRemoveCell(function(){ tr.remove(); }));
-  tbody.appendChild(tr);
-  return tr;
-}
-
-$("addFreqRow").addEventListener("click", function(){
-  addGenericRow("freqTable", [{ placeholder: "e.g. CTAF / Tower / Ground / ATIS" }, { placeholder: "e.g. 118.3" }, { placeholder: "" }]);
-});
-$("addAlt").addEventListener("click", function(){
-  addGenericRow("altTable", [{ placeholder: "ICAO" }, { placeholder: "Name" }, { placeholder: "e.g. 45nm" }, { placeholder: "" }]);
-});
-$("addFbo").addEventListener("click", function(){
-  addGenericRow("fboTable", [
-    { placeholder: "FBO name" }, { placeholder: "Phone" }, { placeholder: "e.g. Jet A / $x.xx" },
-    { placeholder: "Y/N" }, { placeholder: "Y/N" }, { placeholder: "Y/N" }, { placeholder: "Hours" }
-  ]);
-});
-$("addPhone").addEventListener("click", function(){
-  addGenericRow("phoneTable", [{ placeholder: "e.g. Airport Manager" }, { placeholder: "Phone" }, { placeholder: "" }]);
-});
-
-/* ---------------------------------------------------------------------
-   Section 6: researched-FBO dropdown (manually built dataset, see fbo-data.js)
---------------------------------------------------------------------- */
-function populateFboSelect(icao){
-  var sel = $("fboSelect");
-  sel.innerHTML = "";
-  var list = (window.FBO_DATA && window.FBO_DATA[icao]) || [];
-  if(!list.length){
-    sel.appendChild(el("option", { value: "", text: "No researched FBOs yet for " + icao + " — enter manually below" }));
-    return;
-  }
-  sel.appendChild(el("option", { value: "", text: "— Select an FBO to add —" }));
-  list.forEach(function(fbo, i){
-    var opt = el("option", { value: String(i) });
-    opt.textContent = fbo.name + (fbo.phone ? " (" + fbo.phone + ")" : "");
-    sel.appendChild(opt);
-  });
-}
-
-$("addFboFromSelect").addEventListener("click", function(){
-  var icao = $("g_icao").value.trim();
-  var idx = $("fboSelect").value;
-  if(idx === "") return;
-  var fbo = ((window.FBO_DATA && window.FBO_DATA[icao]) || [])[parseInt(idx, 10)];
-  if(!fbo) return;
-  var fuelText = fbo.fuel || "";
-  if(fbo.sourceNote) fuelText = fuelText ? fuelText + " — " + fbo.sourceNote : fbo.sourceNote;
-  addGenericRow("fboTable", [
-    { value: fbo.name || "" }, { value: fbo.phone || "" }, { value: fuelText },
-    { value: fbo.gpu || "" }, { value: fbo.deice || "" }, { value: fbo.hangar || "" }, { value: fbo.hours || "" }
-  ]);
-});
-
-
-/* ---------------------------------------------------------------------
-   Runway cards (Section 3)
---------------------------------------------------------------------- */
-var APPROACH_OPTIONS = ["Unknown / Not Entered", "ILS", "RNAV (GPS)", "VOR", "NDB", "Visual / None (VFR only)"];
-
-function createRunwayCard(data){
-  data = data || {};
-  var id = "rw" + (++rwCounter);
-  var wrap = el("div", { class: "runway-card", "data-rwid": id });
-
-  var head = el("div", { class: "rw-head" });
-  var title = el("h3", { text: "Runway " + (data.rwId || "(new)") });
-  var removeBtn = el("button", { class: "btn-danger", type: "button", text: "Remove Runway", onclick: function(){
-    wrap.remove();
-    state.runways = state.runways.filter(function(r){ return r.id !== id; });
-    renderMatrix(); renderWarnings();
-  }});
-  head.appendChild(title); head.appendChild(removeBtn);
-  wrap.appendChild(head);
-
-  var grid1 = el("div", { class: "grid cols-4" });
-
-  function field(labelText, inputAttrs, value){
-    var f = el("div", { class: "field" });
-    f.appendChild(el("label", { text: labelText }));
-    var input = document.createElement(inputAttrs.tag === "select" ? "select" : "input");
-    delete inputAttrs.tag;
-    Object.keys(inputAttrs).forEach(function(k){ input.setAttribute(k, inputAttrs[k]); });
-    if(value !== undefined && value !== null) input.value = value;
-    f.appendChild(input);
-    grid1.appendChild(f);
-    return input;
-  }
-
-  var rwIdInput = field("Runway ID (e.g. 16/34)", { type: "text" }, data.rwId || "");
-  var lengthInput = field("Length (ft, auto)", { type: "number", min: "0" }, data.length || "");
-  var widthInput = field("Width (ft, auto)", { type: "number", min: "0" }, data.width || "");
-  var surfaceInput = field("Surface (auto)", { type: "text" }, data.surface || "");
-  wrap.appendChild(grid1);
-
-  var grid2 = el("div", { class: "grid cols-3", style: "margin-top:10px;" });
-  function field2(labelText, tag, value, opts){
-    var f = el("div", { class: "field" });
-    f.appendChild(el("label", { text: labelText }));
-    var input;
-    if(tag === "select"){
-      input = document.createElement("select");
-      (opts || []).forEach(function(o){ var op = el("option", { value: o }); op.textContent = o; input.appendChild(op); });
-      if(value) input.value = value;
-    } else if(tag === "textarea"){
-      input = document.createElement("textarea");
-      input.style.minHeight = "44px";
-      if(value) input.value = value;
-    } else {
-      input = document.createElement("input");
-      input.type = tag;
-      if(value !== undefined) input.value = value;
-    }
-    f.appendChild(input);
-    grid2.appendChild(f);
-    return input;
-  }
-  var conditionInput = field2("Surface / Markings Condition Remarks", "text", data.condition || "", null);
-  conditionInput.placeholder = "e.g. Good; or note faded markings / poor condition per Chart Supplement";
-  var weightInput = field2("Weight-Bearing Capacity (PCN / SW-DW-DT)", "text", data.weightBearing || "", null);
-  var lightingInput = field2("Lighting Systems", "text", data.lighting || "", null);
-  lightingInput.placeholder = "e.g. HIRL, REIL Rwy 34, PAPI-4 Rwy 16";
-  wrap.appendChild(grid2);
-
-  var grid3 = el("div", { class: "grid cols-3", style: "margin-top:10px;" });
-  var end1Input = field2("End 1 Identifier", "text", data.end1Id || "", null);
-  var end1Approach = field2("End 1 Instrument Approach", "select", data.end1Approach || APPROACH_OPTIONS[0], APPROACH_OPTIONS);
-  var crosswindInput = field2("Reported/Forecast Crosswind Component (kt, optional)", "number", data.crosswind || "", null);
-  wrap.appendChild(grid3);
-
-  var grid4 = el("div", { class: "grid cols-3", style: "margin-top:10px;" });
-  var end2Input = field2("End 2 Identifier", "text", data.end2Id || "", null);
-  var end2Approach = field2("End 2 Instrument Approach", "select", data.end2Approach || APPROACH_OPTIONS[0], APPROACH_OPTIONS);
-  grid4.appendChild(el("div"));
-  wrap.appendChild(grid4);
-
-  function syncState(){
-    var rec = {
-      id: id,
-      rwId: rwIdInput.value.trim(),
-      length: safeNum(lengthInput.value),
-      width: safeNum(widthInput.value),
-      surface: surfaceInput.value.trim(),
-      condition: conditionInput.value.trim(),
-      weightBearing: weightInput.value.trim(),
-      lighting: lightingInput.value.trim(),
-      end1Id: end1Input.value.trim(),
-      end1Approach: end1Approach.value,
-      end2Id: end2Input.value.trim(),
-      end2Approach: end2Approach.value,
-      crosswind: safeNum(crosswindInput.value)
-    };
-    var idx = state.runways.findIndex(function(r){ return r.id === id; });
-    if(idx === -1) state.runways.push(rec); else state.runways[idx] = rec;
-    title.textContent = "Runway " + (rec.rwId || "(unnamed)");
-    renderMatrix();
-    renderWarnings();
-  }
-  [rwIdInput, lengthInput, widthInput, surfaceInput, conditionInput, weightInput, lightingInput,
-   end1Input, end1Approach, crosswindInput, end2Input, end2Approach].forEach(function(inp){
-    inp.addEventListener("input", syncState);
-    inp.addEventListener("change", syncState);
-  });
-
-  $("runwayList").appendChild(wrap);
-  syncState();
-  return wrap;
-}
-
-$("addRunway").addEventListener("click", function(){ createRunwayCard({}); });
-
-/* ---------------------------------------------------------------------
-   Evaluation matrix + warnings (Sections 3/4/8)
---------------------------------------------------------------------- */
-function currentAircraft(){
-  return AIRCRAFT_PROFILES[$("aircraftSelect").value] || AIRCRAFT_PROFILES.falcon50ex;
-}
-
-function evalRunway(rw, aircraft){
-  var lengthOk = rw.length !== null ? rw.length >= aircraft.minRunway : null;
-  var widthOk = rw.width !== null ? rw.width >= aircraft.minWidth : null;
-  var xwindOk = rw.crosswind !== null ? rw.crosswind <= aircraft.maxCrosswind : null;
-  var overall = "pass";
-  if(lengthOk === false || widthOk === false || xwindOk === false) overall = "fail";
-  else if(rw.length !== null && rw.length <= aircraft.minRunway) overall = "warn";
-  else if(lengthOk === null || widthOk === null) overall = "warn";
-  return { lengthOk: lengthOk, widthOk: widthOk, xwindOk: xwindOk, overall: overall };
-}
-
-function pillFor(ok, thresholdText){
-  if(ok === null) return '<span class="pill pill-warn">N/A (' + thresholdText + ')</span>';
-  return ok
-    ? '<span class="pill pill-pass">OK (' + thresholdText + ')</span>'
-    : '<span class="pill pill-fail">FAIL (' + thresholdText + ')</span>';
-}
-
-function renderMatrix(){
-  var aircraft = currentAircraft();
-  var tbody = document.querySelector("#matrixTable tbody");
-  tbody.innerHTML = "";
-  state.runways.forEach(function(rw){
-    var ev = evalRunway(rw, aircraft);
-    var tr = document.createElement("tr");
-    var overallPill = ev.overall === "pass" ? '<span class="pill pill-pass">PASS</span>'
-                     : ev.overall === "fail" ? '<span class="pill pill-fail">FAIL</span>'
-                     : '<span class="pill pill-warn">CAUTION</span>';
-    var cells = [
-      rw.rwId || "(unnamed)",
-      rw.length !== null ? rw.length + " ft" : "—",
-      rw.width !== null ? rw.width + " ft" : "—",
-      pillFor(ev.lengthOk, "min " + aircraft.minRunway + "ft"),
-      pillFor(ev.widthOk, "min " + aircraft.minWidth + "ft"),
-      pillFor(ev.xwindOk, "max " + aircraft.maxCrosswind + "kt"),
-      overallPill
-    ];
-    cells.forEach(function(c, i){
-      var td = document.createElement("td");
-      if(i === 3 || i === 4 || i === 5 || i === 6) td.innerHTML = c; else td.textContent = c;
-      tr.appendChild(td);
-    });
-    tbody.appendChild(tr);
-  });
-}
-
-function buildWarnings(){
-  var aircraft = currentAircraft();
-  var warnings = [];
-  state.runways.forEach(function(rw){
-    var label = rw.rwId || "(unnamed runway)";
-    if(rw.length !== null && rw.length <= aircraft.minRunway){
-      warnings.push({
-        crit: rw.length < aircraft.minRunway,
-        text: "Runway " + label + " (" + rw.length + " ft) is at or below the " + aircraft.minRunway +
-              " ft safety minimum for the " + aircraft.name + "."
-      });
-    }
-    if(rw.width !== null && rw.width < aircraft.minWidth){
-      warnings.push({ crit: true, text: "Runway " + label + " width (" + rw.width + " ft) is below the " + aircraft.minWidth + " ft minimum for the " + aircraft.name + "." });
-    }
-    if(rw.crosswind !== null && rw.crosswind > aircraft.maxCrosswind){
-      warnings.push({ crit: true, text: "Reported/forecast crosswind component for Runway " + label + " (" + rw.crosswind + " kt) exceeds the " + aircraft.maxCrosswind + " kt maximum demonstrated crosswind for the " + aircraft.name + "." });
-    }
-    [{ endId: rw.end1Id, appr: rw.end1Approach }, { endId: rw.end2Id, appr: rw.end2Approach }].forEach(function(end){
-      if(end.appr === "Visual / None (VFR only)"){
-        var endLabel = end.endId || label;
-        warnings.push({ crit: false, text: "Runway " + endLabel + " is VFR only — no instrument approach procedure entered." });
-      }
-    });
-    var conditionText = (rw.condition || "").toLowerCase();
-    var conditionCrit = conditionText.indexOf("failed") !== -1;
-    if(conditionCrit || conditionText.indexOf("faded") !== -1 || conditionText.indexOf("poor") !== -1){
-      warnings.push({ crit: conditionCrit, text: "Runway " + label + " remarks note degraded markings/surface condition (“" + rw.condition + "”) — verify current status before release." });
-    }
-  });
-  return warnings;
-}
-
-function renderWarnings(){
-  var warnings = buildWarnings();
-  [$("warningList"), $("crewNotesAuto")].forEach(function(ul){
-    ul.innerHTML = "";
-    if(warnings.length === 0){
-      var li = el("li", { class: "empty", text: "No automated warnings triggered by current runway data." });
-      ul.appendChild(li);
-      return;
-    }
-    warnings.forEach(function(w){
-      var li = el("li", { class: w.crit ? "crit" : "", text: w.text });
-      ul.appendChild(li);
-    });
-  });
-}
-
-/* ---------------------------------------------------------------------
-   ICAO fetch (aviationweather.gov public data API)
---------------------------------------------------------------------- */
+function pillClass(result){ return "pill pill-" + String(result).replace(/[^A-Z]/g, ""); }
+function pill(result){ return '<span class="' + pillClass(result) + '">' + result + '</span>'; }
 function setStatus(msg, type){
-  var box = $("fetchStatus");
-  box.textContent = msg;
-  box.className = "status-msg " + (type === "ok" ? "status-ok" : type === "err" ? "status-err" : "status-wait");
+  var el = $("fetchStatus");
+  el.textContent = msg;
+  el.className = "status-msg status-" + (type || "wait");
 }
 
-function mapSurface(code){
-  if(!code) return "";
-  var key = String(code).toUpperCase().trim();
-  return SURFACE_CODE_MAP[key] || key;
-}
+var criteriaData = null;
+var currentReport = null;
 
-function updateAirnavLink(icao){
-  var link = $("airnavLink");
-  if(icao && icao.length === 4){
-    link.href = "https://www.airnav.com/airport/" + encodeURIComponent(icao);
-    link.style.opacity = "1";
-    link.style.pointerEvents = "auto";
-  } else {
-    link.href = "https://www.airnav.com/";
-    link.style.opacity = ".5";
-    link.style.pointerEvents = "none";
-  }
-}
-
-$("icaoInput").addEventListener("input", function(){
-  this.value = this.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 4);
-  updateAirnavLink(this.value);
-});
-
-$("fetchBtn").addEventListener("click", function(){ fetchAirport(); });
-$("icaoInput").addEventListener("keydown", function(e){ if(e.key === "Enter") fetchAirport(); });
-
-function fetchAirport(){
-  var raw = $("icaoInput").value.trim().toUpperCase();
-  if(!/^[A-Z0-9]{4}$/.test(raw)){
-    setStatus("Enter a valid 4-character ICAO identifier (letters/numbers only).", "err");
-    return;
-  }
-
-  var nasrData = window.NASR_AIRPORT_DATA;
-  if(nasrData && nasrData[raw]){
-    applyNasrRecord(nasrData[raw]);
-    setStatus("Loaded " + raw + " from the embedded FAA NASR dataset (effective " + (nasrData[raw].effDate || "unknown") +
-      "). Richer fields (runways, frequencies, contacts) are auto-filled — verify against current Chart Supplement/NOTAMs.", "ok");
-    return;
-  }
-
-  var btn = $("fetchBtn");
-  btn.disabled = true;
-  setStatus("Not in embedded dataset — trying live aviationweather.gov API for " + raw + "…", "wait");
-
-  var url = "https://aviationweather.gov/api/data/airport?ids=" + encodeURIComponent(raw) + "&format=json";
-  fetch(url, { method: "GET", headers: { "Accept": "application/json" } })
-    .then(function(resp){
-      if(!resp.ok) throw new Error("HTTP " + resp.status);
-      return resp.json();
-    })
-    .then(function(data){
-      var record = Array.isArray(data) ? data[0] : data;
-      if(!record || !record.icaoId){
-        setStatus("No record found for " + raw + " in the embedded dataset or the live API. Enter airport data manually below.", "err");
-        return;
-      }
-      applyApiRecord(record);
-      setStatus("Loaded " + record.icaoId + " — " + (record.name || "").trim() +
-        " from the live API. Auto-filled fields are limited to what that feed publishes; complete remaining sections manually.", "ok");
+function loadCriteria(){
+  return fetch("./criteria.json")
+    .then(function(res){
+      if(!res.ok) throw new Error("HTTP " + res.status);
+      return res.json();
     })
     .catch(function(err){
-      setStatus("Not in embedded dataset, and live fetch failed (" + err.message + " — often CORS when opened as a local file). Enter airport data manually below.", "err");
-    })
-    .finally(function(){ btn.disabled = false; });
-}
-
-function applyApiRecord(rec){
-  state.rawApi = rec;
-  $("g_icao").value = rec.icaoId || "";
-  $("g_faaIata").value = [rec.faaId, rec.iataId].filter(Boolean).join(" / ");
-  $("g_name").value = (rec.name || "").trim();
-  $("g_cityState").value = [rec.state, rec.country].filter(Boolean).join(", ");
-  if(typeof rec.lat === "number" && typeof rec.lon === "number"){
-    $("g_latlon").value = rec.lat.toFixed(4) + ", " + rec.lon.toFixed(4);
-  }
-  $("g_elev").value = (rec.elev !== undefined && rec.elev !== null) ? (rec.elev + " ft") : "";
-  $("g_magdec").value = rec.magdec || "";
-  $("g_beacon").value = rec.beacon ? ("Reported: " + rec.beacon + " (verify)") : "Not reported by API (verify)";
-  $("g_tower").value = rec.tower ? ("Reported: " + rec.tower + " (verify)") : "None reported by API (verify)";
-  $("s5_station").value = rec.icaoId || "";
-  populateFboSelect(rec.icaoId || "");
-  updateAirnavLink(rec.icaoId || "");
-
-  var rawBits = [];
-  ["owner", "services", "operations", "priority", "rwyNum", "rwyLength", "rwyType", "freqs", "source"].forEach(function(k){
-    if(rec[k] !== undefined && rec[k] !== null && rec[k] !== "-") rawBits.push(k + "=" + rec[k]);
-  });
-  $("rawFieldsNote").textContent = rawBits.length
-    ? "Additional raw FAA API fields (not reinterpreted, for reference only): " + rawBits.join(", ")
-    : "";
-
-  $("runwayList").innerHTML = "";
-  state.runways = [];
-  if(Array.isArray(rec.runways) && rec.runways.length){
-    rec.runways.forEach(function(r){
-      var length = null, width = null;
-      if(r.dimension && /x/i.test(r.dimension)){
-        var parts = r.dimension.split(/x/i);
-        length = safeNum(parts[0]);
-        width = safeNum(parts[1]);
-      }
-      var ends = (r.id || "").split("/");
-      createRunwayCard({
-        rwId: r.id || "",
-        length: length, width: width,
-        surface: mapSurface(r.surface),
-        end1Id: ends[0] || "", end2Id: ends[1] || ""
-      });
+      throw new Error(
+        "Could not load criteria.json (" + err.message + "). If you opened this file directly from disk, " +
+        "browsers block local JSON loads. Serve this folder with a local static server -- e.g. " +
+        "\"npx serve .\" or \"python -m http.server 8000\" -- then open the page through that server and try again."
+      );
     });
-  } else {
-    createRunwayCard({});
-  }
 }
 
-/* ---------------------------------------------------------------------
-   Apply embedded FAA NASR record (primary, richer data source)
---------------------------------------------------------------------- */
-function formatWeightBearing(rw){
-  var bits = [];
-  if(rw.pcn) bits.push("PCN " + rw.pcn);
-  var wts = [];
-  if(rw.grossWtSW) wts.push("SW " + rw.grossWtSW + "k lb");
-  if(rw.grossWtDW) wts.push("DW " + rw.grossWtDW + "k lb");
-  if(rw.grossWtDTW) wts.push("DTW " + rw.grossWtDTW + "k lb");
-  if(rw.grossWtDDTW) wts.push("DDTW " + rw.grossWtDDTW + "k lb");
-  if(wts.length) bits.push(wts.join(" / ") + " (thousands of lbs per FAA 5010 convention — verify)");
-  return bits.join("; ");
-}
-function formatLighting(rw){
-  var bits = [];
-  if(rw.lighting) bits.push("Edge: " + mapCode(NASR_LIGHTING_MAP, rw.lighting));
-  (rw.ends || []).forEach(function(end){
-    var endBits = [];
-    if(end.vgsi) endBits.push("VGSI: " + mapCode(NASR_VGSI_MAP, end.vgsi));
-    if(end.apchLgtSystem) endBits.push("Apch lgt: " + end.apchLgtSystem);
-    if(end.reilFlag === "Y") endBits.push("REIL");
-    if(end.centerlineLgtFlag === "Y") endBits.push("Centerline lgts");
-    if(end.tdzLgtFlag === "Y") endBits.push("TDZ lgts");
-    if(endBits.length) bits.push("Rwy " + end.id + ": " + endBits.join(", "));
-  });
-  return bits.join(". ");
-}
-function formatConditionRemarks(rw){
-  var bits = [];
-  if(rw.condition) bits.push("Surface: " + mapCode({ EXCELLENT: "Excellent", GOOD: "Good", FAIR: "Fair", POOR: "Poor", FAILED: "Failed" }, rw.condition));
-  (rw.ends || []).forEach(function(end){
-    if(end.markingCond) bits.push("Markings " + end.id + ": " + mapCode(NASR_MARKING_COND_MAP, end.markingCond));
-  });
-  return bits.join(". ");
-}
-function nasrApproachHint(end){
-  // Positive-evidence only: a populated ILS_TYPE confirms a ground-based
-  // nav aid exists. Its absence does NOT mean "no instrument approach" --
-  // RNAV(GPS) procedures are not represented in this dataset at all, so we
-  // never auto-select "Visual / None (VFR only)" from missing data here.
-  if(!end || !end.ilsType) return { preselect: null, note: "" };
-  var t = end.ilsType.toUpperCase();
-  if(t.indexOf("ILS") === 0) return { preselect: "ILS", note: "Ground nav aid on file: " + end.ilsType };
-  return { preselect: null, note: "Ground nav aid on file: " + end.ilsType + " (not auto-selected below — confirm approach type)" };
-}
+function renderPreview(report){
+  $("criteriaBanner").style.display = report.verified ? "none" : "block";
 
-function applyNasrRecord(rec){
-  state.rawApi = null;
-  $("g_icao").value = rec.icao || "";
-  $("g_faaIata").value = rec.faaId || "";
-  $("g_name").value = rec.name || "";
-  $("g_cityState").value = [rec.city, rec.state].filter(Boolean).join(", ");
-  if(typeof rec.lat === "number" && typeof rec.lon === "number"){
-    $("g_latlon").value = rec.lat.toFixed(4) + ", " + rec.lon.toFixed(4);
-  }
-  $("g_elev").value = (rec.elev !== undefined && rec.elev !== null && rec.elev !== "") ? (rec.elev + " ft") : "";
-  $("g_magdec").value = rec.magVarn || "";
-  $("g_ownership").value = mapCode(NASR_OWNERSHIP_MAP, rec.ownership) + (rec.facilityUse === "PU" ? " / Open to the public" : " / Private use");
-  $("g_fuel").value = rec.fuelTypes || "";
-  var arffBits = [];
-  if(rec.far139Type) arffBits.push("Part 139 class " + rec.far139Type);
-  if(rec.far139CarrierSvc) arffBits.push(rec.far139CarrierSvc === "S" ? "Scheduled carrier service" : "No scheduled carrier service");
-  $("g_arff").value = arffBits.length ? arffBits.join("; ") : "Not Part 139 certificated (per FAA record)";
-  $("g_customs").value = rec.customsFlag === "Y" ? "Designated U.S. Customs Airport of Entry (verify hours)" : "Not designated (per FAA record) — verify locally";
-  var beaconBits = [];
-  if(rec.beaconSchedule) beaconBits.push("Beacon sked: " + rec.beaconSchedule);
-  $("g_beacon").value = beaconBits.length ? beaconBits.join("; ") : "Not reported";
-  var towerBits = [rec.towerTypeCode || "NON-ATCT"];
-  if(rec.tower && rec.tower.call) towerBits.push("Call: " + rec.tower.call);
-  if(rec.tower && rec.tower.hours) towerBits.push("Hours: " + rec.tower.hours);
-  if(rec.tower && rec.tower.apchProvider) towerBits.push("Apch/Dep by: " + rec.tower.apchProvider);
-  $("g_tower").value = towerBits.join("; ");
-  $("s5_station").value = rec.icao || "";
-  populateFboSelect(rec.icao || "");
-  updateAirnavLink(rec.icao || "");
-
-  var noteBits = ["Effective " + (rec.effDate || "unknown") + ". Source: FAA 28-Day NASR Subscription (public domain)."];
-  if(rec.lightingSchedule) noteBits.push("Lighting sked: " + rec.lightingSchedule + " (see remarks / verify — general \"operating hours\" is a separate field, enter manually).");
-  if(rec.status && rec.status !== "O") noteBits.push("FAA status code: " + rec.status + " — confirm airport is open before use.");
-  $("rawFieldsNote").textContent = noteBits.join(" ");
-
-  // Runways
-  $("runwayList").innerHTML = "";
-  state.runways = [];
-  if(rec.runways && rec.runways.length){
-    rec.runways.forEach(function(rw){
-      var end1 = rw.ends[0] || {};
-      var end2 = rw.ends[1] || {};
-      var hint1 = nasrApproachHint(end1);
-      var hint2 = nasrApproachHint(end2);
-      var lightingText = formatLighting(rw);
-      var hints = [hint1.note, hint2.note].filter(Boolean).join(". ");
-      createRunwayCard({
-        rwId: rw.id || "",
-        length: rw.length, width: rw.width,
-        surface: mapCode(NASR_SURFACE_MAP, rw.surface),
-        condition: formatConditionRemarks(rw),
-        weightBearing: formatWeightBearing(rw),
-        lighting: lightingText + (hints ? (lightingText ? ". " : "") + hints : ""),
-        end1Id: end1.id || "", end1Approach: hint1.preselect || undefined,
-        end2Id: end2.id || "", end2Approach: hint2.preselect || undefined
-      });
-    });
-  } else {
-    createRunwayCard({});
-  }
-
-  // Communications & Frequencies (Section 2)
-  document.querySelector("#freqTable tbody").innerHTML = "";
-  if(rec.frequencies && rec.frequencies.length){
-    rec.frequencies.forEach(function(f){
-      addGenericRow("freqTable", [
-        { value: f.use || f.facilityType || "" },
-        { value: f.freq || "" },
-        { value: [f.call, f.remark].filter(Boolean).join(" — ") }
-      ]);
-    });
-  }
-  addGenericRow("freqTable", [{ placeholder: "Tower (if applicable)" }, { placeholder: "" }, { placeholder: "" }]);
-  addGenericRow("freqTable", [{ placeholder: "Ground (if applicable)" }, { placeholder: "" }, { placeholder: "" }]);
-  addGenericRow("freqTable", [{ placeholder: "Clearance Delivery (if applicable)" }, { placeholder: "" }, { placeholder: "" }]);
-
-  // Key Phone Numbers (Section 7)
-  document.querySelector("#phoneTable tbody").innerHTML = "";
-  (rec.contacts || []).forEach(function(c){
-    addGenericRow("phoneTable", [{ value: c.title || "Contact" }, { value: c.phone || "" }, { value: c.name || "" }]);
-  });
-  if(rec.weatherPhone){
-    addGenericRow("phoneTable", [{ value: "Weather (ASOS/AWOS)" }, { value: rec.weatherPhone }, { value: "" }]);
-  }
-  if(rec.fssTollFree){
-    addGenericRow("phoneTable", [{ value: "Flight Service Station (" + (rec.fssName || rec.fssId || "") + ")" }, { value: rec.fssTollFree }, { value: "Toll-free pilot briefing" }]);
-  }
-  addGenericRow("phoneTable", [{ value: "FBO" }, { placeholder: "" }, { placeholder: "" }]);
-  addGenericRow("phoneTable", [{ value: "US Customs / CBP" }, { placeholder: "" }, { value: rec.customsFlag === "Y" ? "Designated AOE per FAA record" : "" }]);
-  addGenericRow("phoneTable", [{ value: "FSDO" }, { placeholder: "" }, { placeholder: "" }]);
-  addGenericRow("phoneTable", [{ value: "Ground Handler" }, { placeholder: "" }, { placeholder: "" }]);
-
-  // Surface remarks (Section 8 manual notes, appended, not overwritten)
-  if(rec.remarks && rec.remarks.length){
-    var existing = $("s8_manual").value;
-    var faaRemarks = "FAA record remarks:\n" + rec.remarks.map(function(r){ return "- " + r; }).join("\n");
-    $("s8_manual").value = existing ? existing + "\n\n" + faaRemarks : faaRemarks;
-  }
-
-  renderMatrix();
-  renderWarnings();
-}
-
-/* ---------------------------------------------------------------------
-   DOCX generation (Section 1-9, matching KMCB layout)
---------------------------------------------------------------------- */
-function escapeText(v){ return (v === undefined || v === null) ? "" : String(v); }
-
-function collectTableRows(tbodyId, colCount){
-  var rows = [];
-  document.querySelectorAll("#" + tbodyId + " tbody tr").forEach(function(tr){
-    var inputs = tr.querySelectorAll("input[type=text]");
-    var vals = [];
-    for(var i = 0; i < colCount; i++) vals.push(inputs[i] ? inputs[i].value.trim() : "");
-    if(vals.some(function(v){ return v !== ""; })) rows.push(vals);
-  });
-  return rows;
-}
-
-function buildDocx(){
-  var D = window.docx;
-  if(!D) throw new Error("docx.js library failed to load from CDN.");
-
-  var aircraft = currentAircraft();
-  var warnings = buildWarnings();
-
-  function heading(text, level){
-    return new D.Paragraph({ text: text, heading: level || D.HeadingLevel.HEADING_1, spacing: { before: 280, after: 120 } });
-  }
-  function para(text, opts){
-    opts = opts || {};
-    return new D.Paragraph({ children: [ new D.TextRun({ text: text, bold: !!opts.bold, italics: !!opts.italics }) ], spacing: { after: 100 } });
-  }
-  function cell(text, opts){
-    opts = opts || {};
-    return new D.TableCell({
-      width: opts.width ? { size: opts.width, type: D.WidthType.PERCENTAGE } : undefined,
-      shading: opts.header ? { fill: "0B2540" } : undefined,
-      children: [ new D.Paragraph({ children: [ new D.TextRun({ text: escapeText(text), bold: !!opts.header, color: opts.header ? "FFFFFF" : undefined, size: opts.small ? 18 : 20 }) ] }) ]
-    });
-  }
-  function infoTable(pairs){
-    var rows = pairs.map(function(p){
-      return new D.TableRow({ children: [ cell(p[0], { width: 35, header: false }), cell(p[1] || "—", { width: 65 }) ] });
-    });
-    return new D.Table({ width: { size: 100, type: D.WidthType.PERCENTAGE }, rows: rows });
-  }
-  function gridTable(headers, dataRows){
-    var headerRow = new D.TableRow({ children: headers.map(function(h){ return cell(h, { header: true }); }), tableHeader: true });
-    var rows = dataRows.map(function(r){ return new D.TableRow({ children: r.map(function(v){ return cell(v); }) }); });
-    if(rows.length === 0) rows.push(new D.TableRow({ children: headers.map(function(){ return cell("—"); }) }));
-    return new D.Table({ width: { size: 100, type: D.WidthType.PERCENTAGE }, rows: [headerRow].concat(rows) });
-  }
-  function warningList(list){
-    if(list.length === 0) return [ para("No automated warnings triggered by current runway data.") ];
-    return list.map(function(w){
-      return new D.Paragraph({ bullet: { level: 0 }, children: [ new D.TextRun({ text: w.text, bold: w.crit }) ], spacing: { after: 60 } });
-    });
-  }
-
-  var g = function(id){ return $(id).value.trim(); };
-
-  var children = [];
-
-  // Title block
-  children.push(new D.Paragraph({
-    children: [ new D.TextRun({ text: "AIRPORT SUITABILITY REPORT", bold: true, size: 40, color: "0B2540" }) ],
-    spacing: { after: 40 }
-  }));
-  children.push(new D.Paragraph({
-    children: [ new D.TextRun({ text: (g("g_icao") || "____") + " — " + (g("g_name") || "Airport Name Not Entered"), size: 26, color: "5B6B79" }) ],
-    spacing: { after: 60 }
-  }));
-  children.push(new D.Paragraph({
-    children: [ new D.TextRun({
-      text: "Company: " + (g("companyName") || "—") + "   |   Prepared By: " + (g("preparedBy") || "—") +
-            "   |   Date: " + (g("reportDate") || "—") + "   |   Aircraft: " + aircraft.name +
-            (g("tailNumber") ? " (" + g("tailNumber") + ")" : ""),
-      size: 18, italics: true, color: "5B6B79"
-    }) ],
-    spacing: { after: 100 }
-  }));
-  children.push(new D.Paragraph({
-    children: [ new D.TextRun({
-      text: "Data currency notice: fields marked auto were retrieved from the embedded FAA 28-Day NASR dataset and/or the live aviationweather.gov API at generation time. Instrument-approach availability (RNAV/GPS in particular) is not represented in the NASR dataset and is never auto-inferred as \"VFR only\" by this tool. All safety-critical data (lighting, weight-bearing capacity, approach availability, surface condition, FBO/contact details) must be independently verified against the current FAA Chart Supplement and NOTAMs prior to release.",
-      italics: true, size: 16, color: "B5720A"
-    }) ],
-    spacing: { after: 200 }
-  }));
-
-  // Section 1
-  children.push(heading("Section 1: General Airport Information"));
-  children.push(infoTable([
-    ["ICAO Identifier", g("g_icao")],
-    ["FAA / IATA ID", g("g_faaIata")],
-    ["Airport Name", g("g_name")],
-    ["City / State", g("g_cityState")],
-    ["Latitude / Longitude", g("g_latlon")],
-    ["Field Elevation", g("g_elev")],
-    ["Magnetic Variation", g("g_magdec")],
-    ["Time Zone", g("g_tz")],
-    ["Ownership / Use", g("g_ownership")],
-    ["Airport Reference Point Notes", g("g_arp")],
-    ["Fuel Available", g("g_fuel")],
-    ["ARFF / Fire-Rescue Index", g("g_arff")],
-    ["Customs / Immigration", g("g_customs")],
-    ["Operating Hours", g("g_hours")],
-    ["Beacon", g("g_beacon")],
-    ["Control Tower", g("g_tower")]
-  ]));
-
-  // Section 2
-  children.push(heading("Section 2: Communications & Frequencies"));
-  children.push(gridTable(["Facility", "Frequency", "Remarks"], collectTableRows("freqTable", 3)));
-
-  // Section 3
-  children.push(heading("Section 3: Runway Analysis"));
-  children.push(para("Aircraft profile: " + aircraft.name + " (min runway " + aircraft.minRunway + " ft, min width " +
-    aircraft.minWidth + " ft, max demonstrated crosswind " + aircraft.maxCrosswind + " kt).", { italics: true }));
-  var rwHeaders = ["Runway", "Length (ft)", "Width (ft)", "Surface", "Condition Remarks", "Weight Bearing", "Lighting"];
-  var rwRows = state.runways.map(function(rw){
-    return [rw.rwId, rw.length !== null ? String(rw.length) : "", rw.width !== null ? String(rw.width) : "",
-            rw.surface, rw.condition, rw.weightBearing, rw.lighting];
-  });
-  children.push(gridTable(rwHeaders, rwRows));
-  children.push(para("", {}));
-  children.push(para("Comparison Matrix vs. " + aircraft.name + " Minimums", { bold: true }));
-  var matrixHeaders = ["Runway", "Length", "Width", "Length vs Min", "Width vs Min", "Crosswind vs Max", "Overall"];
-  var matrixRows = state.runways.map(function(rw){
-    var ev = evalRunway(rw, aircraft);
-    var fmt = function(ok){ return ok === null ? "N/A" : (ok ? "OK" : "FAIL"); };
-    return [
-      rw.rwId, rw.length !== null ? rw.length + " ft" : "—", rw.width !== null ? rw.width + " ft" : "—",
-      fmt(ev.lengthOk), fmt(ev.widthOk), fmt(ev.xwindOk), ev.overall.toUpperCase()
-    ];
-  });
-  children.push(gridTable(matrixHeaders, matrixRows));
-
-  // Section 4
-  children.push(heading("Section 4: Obstacle, Terrain & Approach Environment"));
-  children.push(para("Terrain Notes:", { bold: true }));
-  children.push(para(g("s4_terrain") || "—"));
-  children.push(para("Obstacle Notes:", { bold: true }));
-  children.push(para(g("s4_obstacles") || "—"));
-  var rwEndHeaders = ["Runway", "End", "Instrument Approach"];
-  var rwEndRows = [];
-  state.runways.forEach(function(rw){
-    rwEndRows.push([rw.rwId, rw.end1Id, rw.end1Approach]);
-    rwEndRows.push([rw.rwId, rw.end2Id, rw.end2Approach]);
-  });
-  children.push(gridTable(rwEndHeaders, rwEndRows));
-  children.push(para("Automated Warnings:", { bold: true }));
-  children = children.concat(warningList(warnings));
-
-  // Section 5
-  children.push(heading("Section 5: Weather & Alternates"));
-  children.push(infoTable([
-    ["METAR / TAF Station", g("s5_station")],
-    ["Typical / Seasonal Hazards", g("s5_hazards")],
-    ["Weather Source Notes", g("s5_wxnotes")]
-  ]));
-  children.push(para("Alternates:", { bold: true }));
-  children.push(gridTable(["ICAO", "Name", "Distance", "Notes"], collectTableRows("altTable", 4)));
-
-  // Section 6
-  children.push(heading("Section 6: FBO & Handling"));
-  children.push(gridTable(["FBO Name", "Phone", "Fuel (Type/Price)", "GPU", "De-Ice", "Hangar", "Hours"], collectTableRows("fboTable", 7)));
-
-  // Section 7
-  children.push(heading("Section 7: Key Phone Numbers"));
-  children.push(gridTable(["Role / Contact", "Phone", "Notes"], collectTableRows("phoneTable", 3)));
-
-  // Section 8
-  children.push(heading("Section 8: Automated Crew Notes & Remarks"));
-  children = children.concat(warningList(warnings));
-  children.push(para("Additional Crew Notes:", { bold: true }));
-  children.push(para(g("s8_manual") || "—"));
-
-  // Section 9
-  children.push(heading("Section 9: Chief Pilot Concurrence & Signature Block"));
-  children.push(para(g("s9_statement") || "—"));
-  children.push(para(""));
-  children.push(para("Name: " + (g("s9_name") || "—") + "        Title: " + (g("s9_title") || "—")));
-  children.push(para("Signature: ______________________________        Date: " + (g("s9_date") || "—")));
-
-  var doc = new D.Document({
-    creator: g("companyName") || "Airport Suitability Report Generator",
-    title: "Airport Suitability Report - " + (g("g_icao") || ""),
-    sections: [ { properties: {}, children: children } ]
-  });
-  return doc;
-}
-
-/* ---------------------------------------------------------------------
-   Report Log (local history — browser localStorage, not part of the docx)
---------------------------------------------------------------------- */
-var REPORT_LOG_KEY = "airportSuitabilityReportLog";
-
-function loadReportLog(){
-  try{ return JSON.parse(window.localStorage.getItem(REPORT_LOG_KEY) || "[]"); }
-  catch(e){ return []; }
-}
-function saveReportLog(log){
-  try{ window.localStorage.setItem(REPORT_LOG_KEY, JSON.stringify(log)); }
-  catch(e){ /* localStorage unavailable (e.g. private browsing) — log just won't persist */ }
-}
-function logGeneratedReport(entry){
-  var log = loadReportLog();
-  log.unshift(entry);
-  saveReportLog(log);
-  renderReportLog();
-}
-function renderReportLog(){
-  var tbody = document.querySelector("#reportLogTable tbody");
-  var log = loadReportLog();
-  tbody.innerHTML = "";
-  if(!log.length){
+  // Section 1: Determination
+  var detBody = document.querySelector("#tblDetermination tbody");
+  detBody.innerHTML = "";
+  var notes = [];
+  report.determinations.forEach(function(a){
     var tr = document.createElement("tr");
-    var td = document.createElement("td");
-    td.colSpan = 6; td.textContent = "No reports generated yet in this browser.";
-    td.style.color = "var(--gray-400)";
-    tr.appendChild(td); tbody.appendChild(tr);
-    return;
+    var qual = a.qualifyingRunways.length ? a.qualifyingRunways.join(", ") + (a.qualifyingRunways.length === 1 ? " only" : "") : "None";
+    tr.innerHTML = "<td>" + a.aircraftName + "</td><td>" + pill(a.determination) + "</td><td>" + qual + "</td>";
+    detBody.appendChild(tr);
+    if(a.note) notes.push(a.note);
+  });
+  $("determinationNotes").textContent = notes.join(" ");
+
+  // Section 2: Facility
+  var f = report.facility;
+  var facilityGrid = $("facilityGrid");
+  function field(label, value){
+    var d = document.createElement("div");
+    d.className = "field";
+    var isGap = value === "NOT AVAILABLE";
+    d.innerHTML = "<label>" + label + "</label><div style='padding:9px 10px;border:1px solid var(--gray-200);border-radius:6px;background:#fff;" +
+      (isGap ? "color:var(--gold);font-weight:600;" : "") + "'>" + (value || "—") + "</div>";
+    return d;
   }
-  log.forEach(function(entry){
+  facilityGrid.innerHTML = "";
+  facilityGrid.appendChild(field("Control Tower", f.controlTower.text));
+  facilityGrid.appendChild(field("Elevation", f.elevation));
+  facilityGrid.appendChild(field("Airport Attendance", f.attendance));
+  facilityGrid.appendChild(field("ARFF Index", f.arffIndex));
+  facilityGrid.appendChild(field("Fuel on Field", f.fuelOnField));
+  facilityGrid.appendChild(field("Airport Manager", f.airportManagerPhone));
+  var remarksList = $("remarksList");
+  remarksList.innerHTML = "";
+  f.remarks.forEach(function(r){ var li = document.createElement("li"); li.textContent = r; remarksList.appendChild(li); });
+
+  // Section 3: Communications
+  var commsBody = document.querySelector("#tblComms tbody");
+  commsBody.innerHTML = "";
+  report.communications.forEach(function(c){
     var tr = document.createElement("tr");
-    [entry.time, entry.icao, entry.name, entry.aircraft, entry.company, entry.filename].forEach(function(v){
-      var td = document.createElement("td");
-      td.textContent = v || "—";
-      tr.appendChild(td);
-    });
-    tbody.appendChild(tr);
+    tr.innerHTML = "<td>" + (c.call ? c.facilityType + " — " + c.call : c.facilityType) + "</td><td>" + c.freq + "</td><td>" + c.use + "</td><td>" + (c.remark || "—") + "</td>";
+    commsBody.appendChild(tr);
   });
-}
-function csvEscape(v){
-  v = v === undefined || v === null ? "" : String(v);
-  return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
-}
-$("exportLogBtn").addEventListener("click", function(){
-  var log = loadReportLog();
-  var headers = ["Generated", "ICAO", "Airport Name", "Aircraft", "Company", "Filename"];
-  var lines = [headers.join(",")];
-  log.forEach(function(entry){
-    lines.push([entry.time, entry.icao, entry.name, entry.aircraft, entry.company, entry.filename].map(csvEscape).join(","));
-  });
-  var blob = new Blob([lines.join("\n")], { type: "text/csv" });
-  var url = URL.createObjectURL(blob);
-  var a = document.createElement("a");
-  a.href = url; a.download = "Airport_Suitability_Report_Log.csv";
-  document.body.appendChild(a); a.click(); document.body.removeChild(a);
-  setTimeout(function(){ URL.revokeObjectURL(url); }, 4000);
-});
-$("clearLogBtn").addEventListener("click", function(){
-  if(!confirm("Clear the local report log? This cannot be undone.")) return;
-  saveReportLog([]);
-  renderReportLog();
-});
 
-$("generateBtn").addEventListener("click", function(){
-  var btn = this;
-  var status = $("genStatus");
-  btn.disabled = true;
-  status.textContent = "Generating document…";
-  try{
-    var doc = buildDocx();
-    window.docx.Packer.toBlob(doc).then(function(blob){
-      var icao = ($("g_icao").value || "AIRPORT").trim() || "AIRPORT";
-      var fname = "Airport_Suitability_Report_" + icao.replace(/[^A-Za-z0-9_-]/g, "") + ".docx";
-      var url = URL.createObjectURL(blob);
-      var a = document.createElement("a");
-      a.href = url; a.download = fname;
-      document.body.appendChild(a); a.click(); document.body.removeChild(a);
-      setTimeout(function(){ URL.revokeObjectURL(url); }, 4000);
-      status.textContent = "Downloaded " + fname;
-      logGeneratedReport({
-        time: new Date().toLocaleString(),
-        icao: icao,
-        name: $("g_name").value.trim(),
-        aircraft: currentAircraft().name,
-        company: $("companyName").value.trim(),
-        filename: fname
-      });
-      btn.disabled = false;
-    }).catch(function(err){
-      status.textContent = "Document generation failed: " + err.message;
-      btn.disabled = false;
+  // Section 4: Runway evaluation
+  var head = $("runwayHead");
+  head.innerHTML = "<th>Runway</th><th>Length</th><th>Width</th><th>Surface</th><th>Wt Brg</th>" +
+    report.determinations.map(function(a){ return "<th>" + a.aircraftName + "</th>"; }).join("");
+  var rwBody = document.querySelector("#tblRunways tbody");
+  rwBody.innerHTML = "";
+  report.runwayFacts.forEach(function(rw, i){
+    var tr = document.createElement("tr");
+    var cells = "<td>" + rw.id + "</td><td>" + (rw.length ? rw.length.toLocaleString() + " ft" : "—") + "</td><td>" +
+      (rw.width ? rw.width + " ft" : "—") + "</td><td>" + rw.surface + "</td><td>" + rw.wtBrg + "</td>";
+    report.determinations.forEach(function(a){
+      var h = a.headline[i];
+      cells += "<td>" + pill(h.result) + (h.marginDisplay !== "—" ? " " + h.marginDisplay : "") + "</td>";
     });
-  } catch(err){
-    status.textContent = "Document generation failed: " + err.message;
-    btn.disabled = false;
+    tr.innerHTML = cells;
+    rwBody.appendChild(tr);
+  });
+
+  // Section 5: Criteria evaluation
+  var criteriaRoot = $("criteriaTables");
+  criteriaRoot.innerHTML = "";
+  var any = false;
+  report.determinations.forEach(function(a){
+    a.criteriaTables.forEach(function(t){
+      any = true;
+      var h3 = document.createElement("h3");
+      h3.style.cssText = "font-size:.85rem;color:var(--navy);margin:16px 0 8px;";
+      h3.textContent = a.aircraftName + " / RWY " + t.runwayId;
+      criteriaRoot.appendChild(h3);
+      var table = document.createElement("table");
+      table.innerHTML = "<thead><tr><th>Criterion</th><th>Actual</th><th>Required</th><th>Margin</th><th>Result</th></tr></thead><tbody>" +
+        t.rows.map(function(r){
+          return "<tr><td>" + r.label + "</td><td>" + r.actualDisplay + "</td><td>" + r.requiredDisplay + "</td><td>" + r.marginDisplay + "</td><td>" + pill(r.result) + "</td></tr>";
+        }).join("") + "</tbody>";
+      criteriaRoot.appendChild(table);
+    });
+  });
+  if(!any){
+    var p = document.createElement("p");
+    p.className = "small-note";
+    p.textContent = "No runway currently qualifies for a detailed criteria breakdown for any evaluated aircraft.";
+    criteriaRoot.appendChild(p);
   }
-});
 
-/* ---------------------------------------------------------------------
-   Reset
---------------------------------------------------------------------- */
-$("resetBtn").addEventListener("click", function(){
-  if(!confirm("Reset the entire form? This clears all entered data.")) return;
-  document.querySelectorAll("input[type=text], input[type=number], input[type=date], textarea").forEach(function(i){ i.value = ""; });
-  ["freqTable", "altTable", "fboTable", "phoneTable"].forEach(function(id){
-    document.querySelector("#" + id + " tbody").innerHTML = "";
+  // Section 6: FBO
+  var fboBody = document.querySelector("#tblFbo tbody");
+  fboBody.innerHTML = "";
+  if(report.fbo.length === 0){
+    fboBody.innerHTML = '<tr><td colspan="4" class="small-note">No FBO records on file for this airport.</td></tr>';
+  } else {
+    report.fbo.forEach(function(f){
+      var tr = document.createElement("tr");
+      tr.innerHTML = "<td>" + f.name + "</td><td>" + pillOrText(f.phone) + "</td><td>" + pillOrText(f.fuel) + "</td><td>" + pillOrText(f.services) + "</td>";
+      fboBody.appendChild(tr);
+    });
+  }
+  function pillOrText(v){ return v === "CONFIRM" ? pill("CONFIRM") : v; }
+
+  // Section 7: Disqualifying findings
+  var findingsList = $("findingsList");
+  findingsList.innerHTML = "";
+  if(report.disqualifyingFindings.length === 0){
+    findingsList.innerHTML = "<li class='small-note'>None identified from evaluated criteria.</li>";
+  } else {
+    report.disqualifyingFindings.forEach(function(f){ var li = document.createElement("li"); li.textContent = f; findingsList.appendChild(li); });
+  }
+
+  // Section 8: Verification items
+  var verifBody = document.querySelector("#tblVerification tbody");
+  verifBody.innerHTML = "";
+  if(report.verificationItems.length === 0){
+    verifBody.innerHTML = '<tr><td colspan="3" class="small-note">None — every field used in this report had a NASR-sourced or confirmed value.</td></tr>';
+  } else {
+    report.verificationItems.forEach(function(it, i){
+      var tr = document.createElement("tr");
+      tr.innerHTML = "<td>" + (i + 1) + "</td><td>" + it.item + "</td><td>" + (it.action || "Confirm before dispatch") + "</td>";
+      verifBody.appendChild(tr);
+    });
+  }
+
+  $("previewRoot").classList.remove("preview-hidden");
+}
+
+function doPreview(){
+  var icao = $("icaoInput").value.trim().toUpperCase();
+  if(icao.length !== 4){ setStatus("Enter a 4-letter ICAO identifier.", "err"); return; }
+  if(!window.NASR_AIRPORT_DATA){ setStatus("airport-data.js failed to load.", "err"); return; }
+  setStatus("Loading criteria.json...", "wait");
+
+  loadCriteria().then(function(criteria){
+    criteriaData = criteria;
+    var report = window.ReportData.buildReport(icao, window.NASR_AIRPORT_DATA, criteriaData, window.FBO_DATA || {});
+    if(report.error){
+      setStatus(report.error, "err");
+      $("generateBtn").disabled = true;
+      return;
+    }
+    currentReport = report;
+    renderPreview(report);
+    setStatus("Preview ready for " + report.icao + " — " + report.airportName + ". Review before downloading.", "ok");
+    $("generateBtn").disabled = false;
+  }).catch(function(err){
+    setStatus(err.message, "err");
+    $("generateBtn").disabled = true;
   });
-  $("runwayList").innerHTML = "";
-  state.runways = [];
-  state.rawApi = null;
-  $("rawFieldsNote").textContent = "";
-  createRunwayCard({});
-  renderMatrix();
-  renderWarnings();
-  $("s9_statement").value = "I have reviewed this Airport Suitability Report and concur that the airport meets company standards for the aircraft type indicated, subject to the notes and warnings above and independent verification of current NOTAMs, weather, and performance data prior to dispatch.";
-  $("s9_title").value = "Chief Pilot";
-  $("companyName").value = "PACCAR";
-  $("fboSelect").innerHTML = "";
-  $("fboSelect").appendChild(el("option", { value: "", text: "— No airport looked up yet —" }));
-  updateAirnavLink("");
-  setStatus("Form reset. Enter a 4-letter ICAO identifier and click Fetch.", "wait");
-});
+}
 
-/* ---------------------------------------------------------------------
-   Init
---------------------------------------------------------------------- */
-createRunwayCard({});
-renderMatrix();
-renderWarnings();
-renderReportLog();
-$("reportDate").value = new Date().toISOString().slice(0, 10);
+function doGenerate(){
+  if(!currentReport){ setStatus("Click Preview first.", "err"); return; }
+  if(!window.docx){ setStatus("docx library failed to load (vendor/docx.iife.js missing).", "err"); return; }
+  setStatus("Generating .docx...", "wait");
+  var doc = window.DocxBuilder.build(currentReport, window.docx);
+  window.docx.Packer.toBlob(doc).then(function(blob){
+    var d = new Date();
+    var stamp = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+    var filename = currentReport.icao + "-suitability-" + stamp + ".docx";
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    setStatus("Downloaded " + filename, "ok");
+  }).catch(function(err){
+    setStatus("Failed to generate .docx: " + err.message, "err");
+  });
+}
+
+$("previewBtn").addEventListener("click", doPreview);
+$("generateBtn").addEventListener("click", doGenerate);
+$("icaoInput").addEventListener("keydown", function(e){ if(e.key === "Enter") doPreview(); });
 
 (function initNasrNote(){
   var data = window.NASR_AIRPORT_DATA;
   var note = $("nasrCycleNote");
   if(!data){
-    note.textContent = "dataset not loaded — airport-data.js is missing; live API and manual entry only";
+    note.textContent = "dataset not loaded — airport-data.js is missing";
     return;
   }
   var keys = Object.keys(data);
