@@ -67,6 +67,8 @@ function findEnd(rw, id) {
     call: "DENTON", hours: "0600-2200", apchProvider: "D10", depProvider: "D10",
   });
 
+  eq("KDTO wind indicator is lighted (Y-L)", rec.windIndicatorFlag, "Y-L");
+
   const rw1 = findRunway(rec, "18L/36R");
   ok("KDTO has runway 18L/36R", !!rw1);
   if (rw1) {
@@ -166,6 +168,19 @@ function findEnd(rw, id) {
     eq("KHYR 16/34 surface code", rw.surface, "TURF");
     eq("KHYR 16/34 surface decoded", rw.surfaceDesc, "Turf/grass");
     eq("KHYR 16/34 has no edge lighting code (blank in source)", rw.lighting, "");
+  }
+
+  // Real positive case for the night-capability obstruction-lighting check:
+  // KHYR's instrument runway (03/21) has a lighted obstruction marking on
+  // end 03 -- everywhere else in the fixture set this field is blank.
+  const rwHyr0321 = findRunway(rec, "03/21");
+  ok("KHYR has runway 03/21", !!rwHyr0321);
+  if (rwHyr0321) {
+    const end03 = findEnd(rwHyr0321, "03");
+    ok("KHYR 03 end exists", !!end03);
+    if (end03) eq("KHYR 03 has a lighted obstruction marking (OBSTN_MRKD_CODE=L)", end03.obstnMrkdCode, "L");
+    const end21 = findEnd(rwHyr0321, "21");
+    if (end21) eq("KHYR 21 has no obstruction marking on file", end21.obstnMrkdCode, "");
   }
 })();
 

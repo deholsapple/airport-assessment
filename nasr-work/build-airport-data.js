@@ -315,6 +315,9 @@ for (const r of included) {
     fuelTypesDesc: decodeFuelTypes(r.FUEL_TYPES),
     lightingSchedule: r.LGT_SKED || "",
     beaconSchedule: r.BCN_LGT_SKED || "",
+    // Y / Y-L / N / blank. "L" suffix means the wind indicator is lighted --
+    // relevant to night-capability screening, not just presence.
+    windIndicatorFlag: r.WIND_INDCR_FLAG || "",
     towerTypeCode: r.TWR_TYPE_CODE || "",
     customsFlag: r.CUST_FLAG || "N",
     landingFeeFlag: r.LNDG_FEE_FLAG || "",
@@ -414,6 +417,9 @@ for (const r of aptRwyEnd) {
     toda: r.TKOF_DIST_AVBL || "", // Takeoff Distance Available
     asda: r.ACLT_STOP_DIST_AVBL || "", // Accelerate-Stop Distance Available
     lda: r.LNDG_DIST_AVBL || "", // Landing Distance Available
+    // Blank / M (marked) / L (lighted) / LM (lighted+marked) -- night-
+    // capability screening (obstruction lighting), not a chart-quality field.
+    obstnMrkdCode: r.OBSTN_MRKD_CODE || "",
   });
 }
 
