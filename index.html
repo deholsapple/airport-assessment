@@ -131,6 +131,17 @@
   .pill-SUITABLEWITHLIMITATIONS{background:var(--amber-bg);color:var(--amber);}
   .pill-NOTSUITABLE{background:var(--fail-bg);color:var(--fail);}
   .fbo-banner{background:var(--gold-bg);border:1px solid var(--gold-border);color:var(--gold);border-radius:6px;padding:10px 12px;font-size:.82rem;margin-bottom:10px;}
+  .fbo-row{display:grid;grid-template-columns:1.4fr 1fr 1fr 1.6fr auto;gap:8px;margin-bottom:8px;align-items:center;}
+  @media (max-width:820px){ .fbo-row{grid-template-columns:1fr;} }
+  textarea{
+    width:100%;padding:9px 10px;border:1px solid var(--gray-200);border-radius:6px;
+    font-size:.92rem;font-family:inherit;background:#fff;color:var(--gray-800);min-height:70px;resize:vertical;
+  }
+  textarea:focus{outline:2px solid var(--navy);outline-offset:1px;border-color:var(--navy);}
+  .btn-danger{background:#fff;color:var(--fail);border-color:var(--fail);padding:6px 10px;font-size:.75rem;}
+  .btn-danger:hover{background:var(--fail-bg);}
+  .btn-add{background:#fff;color:var(--ok);border:1px dashed var(--ok);width:100%;padding:9px;}
+  .btn-add:hover{background:var(--ok-bg);}
   footer.action-bar{
     position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid var(--gray-200);
     padding:12px clamp(14px,3vw,32px);box-shadow:0 -2px 8px rgba(0,0,0,.06);z-index:40;
@@ -147,7 +158,7 @@
   <div class="header-row">
     <div>
       <h1>Airport Suitability Report Generator</h1>
-      <div class="subtitle">Falcon 50EX / Gulfstream G280 &middot; NASR + criteria.json &middot; Sections 1&ndash;10</div>
+      <div class="subtitle">Falcon 50EX / Gulfstream G280 &middot; NASR + criteria.json &middot; Sections 1&ndash;9</div>
     </div>
     <span class="badge">Client-side &middot; no server</span>
   </div>
@@ -186,13 +197,44 @@
     </div>
   </section>
 
+  <!-- FBO entry: the one place manual entry is correct -- no authoritative feed exists -->
+  <section class="card">
+    <div class="card-head"><h2><span class="section-num">&#9992;</span>FBO / Services (manual entry)</h2></div>
+    <div class="card-body">
+      <div class="card-sub">
+        No authoritative FBO feed exists, so this is the one section you fill in yourself. Blank fields print
+        <strong>CONFIRM</strong> in the report. <a id="airnavLink" href="https://www.airnav.com/airport/" target="_blank" rel="noopener noreferrer">Look up FBOs on AirNav &#8599;</a>
+        (updates once you enter an ICAO above).
+      </div>
+      <div id="fboRows"></div>
+      <button class="btn-add" type="button" id="addFboRow">+ Add FBO</button>
+      <div class="small-note" id="fboResearchedNote" style="margin-top:8px;"></div>
+    </div>
+  </section>
+
+  <!-- PIC comments + sign-off names -->
+  <section class="card">
+    <div class="card-head"><h2><span class="section-num">&#9998;</span>PIC Comments &amp; Sign-off</h2></div>
+    <div class="card-body">
+      <div class="field" style="margin-bottom:12px;">
+        <label for="picComments">PIC Narrative (printed into &sect;8 of the report)</label>
+        <textarea id="picComments" placeholder="Free-text notes for this specific assessment..."></textarea>
+      </div>
+      <div class="grid cols-3">
+        <div class="field"><label for="picName">Pilot in Command (name)</label><input type="text" id="picName" placeholder="Name"></div>
+        <div class="field"><label for="chiefPilotName">Chief Pilot (name)</label><input type="text" id="chiefPilotName" placeholder="Name"></div>
+      </div>
+      <div class="small-note">Signature and date are left blank in the .docx for a wet or digital signature after review.</div>
+    </div>
+  </section>
+
   <!-- Preview -->
   <div id="previewRoot" class="preview-hidden">
 
     <section class="card">
       <div class="card-head"><h2><span class="section-num">1</span>Determination</h2></div>
       <div class="card-body">
-        <div class="matrix-wrap"><table id="tblDetermination"><thead><tr><th>Aircraft</th><th>Determination</th><th>Qualifying Runways</th></tr></thead><tbody></tbody></table></div>
+        <div class="matrix-wrap"><table id="tblDetermination"><thead><tr><th>Aircraft</th><th>Determination</th><th>Qualifying Runway Ends</th></tr></thead><tbody></tbody></table></div>
         <div id="determinationNotes" class="small-note"></div>
       </div>
     </section>
@@ -210,40 +252,37 @@
     <section class="card">
       <div class="card-head"><h2><span class="section-num">3</span>Communications</h2></div>
       <div class="card-body">
+        <div class="card-sub">Operational set only: tower, ground, clearance delivery, CTAF, ATIS, ASOS/AWOS, primary approach/departure. Named STAR/DP/RNAV procedure frequencies are in the NASR data but filtered out here as routing noise.</div>
         <div class="matrix-wrap"><table id="tblComms"><thead><tr><th>Facility</th><th>Frequency</th><th>Use</th><th>Notes</th></tr></thead><tbody></tbody></table></div>
       </div>
     </section>
 
     <section class="card">
-      <div class="card-head"><h2><span class="section-num">4</span>Runway Evaluation &mdash; All Runways</h2></div>
+      <div class="card-head"><h2><span class="section-num">4</span>Runway Evaluation</h2></div>
       <div class="card-body">
-        <div class="matrix-wrap"><table id="tblRunways"><thead><tr id="runwayHead"></tr></thead><tbody></tbody></table></div>
-      </div>
-    </section>
-
-    <section class="card">
-      <div class="card-head"><h2><span class="section-num">5</span>Criteria Evaluation</h2></div>
-      <div class="card-body">
+        <div class="card-sub">Evaluated per runway end against NASR declared distances (TORA/TODA/ASDA/LDA), not physical length. A blank declared distance means NASR hasn't published one for that end -- it is never treated as equal to physical length.</div>
+        <div id="runwayGroups"></div>
         <div id="criteriaTables"></div>
         <div class="small-note">NOT EVALUATED = threshold not yet set in criteria.json. UNKNOWN = threshold set, but NASR has no actual value to compare.</div>
       </div>
     </section>
 
     <section class="card">
-      <div class="card-head"><h2><span class="section-num">6</span>Services and FBO</h2></div>
+      <div class="card-head"><h2><span class="section-num">5</span>Services and FBO</h2></div>
       <div class="card-body">
         <div class="fbo-banner">NOT FROM NASR &mdash; CONFIRM BY PHONE. FBO services, hours, and fuel change without notice.</div>
+        <div id="fboLookupPreview" class="small-note"></div>
         <div class="matrix-wrap"><table id="tblFbo"><thead><tr><th>FBO</th><th>Phone</th><th>Fuel</th><th>Services</th></tr></thead><tbody></tbody></table></div>
       </div>
     </section>
 
     <section class="card">
-      <div class="card-head"><h2><span class="section-num">7</span>Disqualifying Findings</h2></div>
+      <div class="card-head"><h2><span class="section-num">6</span>Disqualifying Findings</h2></div>
       <div class="card-body"><ul id="findingsList" style="margin:0;padding-left:18px;font-size:.85rem;"></ul></div>
     </section>
 
     <section class="card">
-      <div class="card-head"><h2><span class="section-num">8</span>Items Requiring Verification</h2></div>
+      <div class="card-head"><h2><span class="section-num">7</span>Items Requiring Verification</h2></div>
       <div class="card-body">
         <div class="card-sub">Auto-generated. Every data point the source could not supply becomes an action item.</div>
         <div class="matrix-wrap"><table id="tblVerification"><thead><tr><th style="width:6%">#</th><th>Item</th><th>Action</th></tr></thead><tbody></tbody></table></div>
@@ -299,7 +338,7 @@ function renderPreview(report){
   var notes = [];
   report.determinations.forEach(function(a){
     var tr = document.createElement("tr");
-    var qual = a.qualifyingRunways.length ? a.qualifyingRunways.join(", ") + (a.qualifyingRunways.length === 1 ? " only" : "") : "None";
+    var qual = a.qualifyingEnds.length ? a.qualifyingEnds.join(", ") + (a.qualifyingEnds.length === 1 ? " only" : "") : "None";
     tr.innerHTML = "<td>" + a.aircraftName + "</td><td>" + pill(a.determination) + "</td><td>" + qual + "</td>";
     detBody.appendChild(tr);
     if(a.note) notes.push(a.note);
@@ -337,25 +376,30 @@ function renderPreview(report){
     commsBody.appendChild(tr);
   });
 
-  // Section 4: Runway evaluation
-  var head = $("runwayHead");
-  head.innerHTML = "<th>Runway</th><th>Length</th><th>Width</th><th>Surface</th><th>Wt Brg</th>" +
-    report.determinations.map(function(a){ return "<th>" + a.aircraftName + "</th>"; }).join("");
-  var rwBody = document.querySelector("#tblRunways tbody");
-  rwBody.innerHTML = "";
-  report.runwayFacts.forEach(function(rw, i){
-    var tr = document.createElement("tr");
-    var cells = "<td>" + rw.id + "</td><td>" + (rw.length ? rw.length.toLocaleString() + " ft" : "—") + "</td><td>" +
-      (rw.width ? rw.width + " ft" : "—") + "</td><td>" + rw.surface + "</td><td>" + rw.wtBrg + "</td>";
-    report.determinations.forEach(function(a){
-      var h = a.headline[i];
-      cells += "<td>" + pill(h.result) + (h.marginDisplay !== "—" ? " " + h.marginDisplay : "") + "</td>";
-    });
-    tr.innerHTML = cells;
-    rwBody.appendChild(tr);
+  // Section 4: Runway evaluation (merged physical/declared-distance facts + criteria)
+  var groupsRoot = $("runwayGroups");
+  groupsRoot.innerHTML = "";
+  var byRunway = {}, runwayOrder = [];
+  report.endFacts.forEach(function(ef){
+    if(!byRunway[ef.runwayId]){ byRunway[ef.runwayId] = []; runwayOrder.push(ef.runwayId); }
+    byRunway[ef.runwayId].push(ef);
+  });
+  runwayOrder.forEach(function(rwId){
+    var ends = byRunway[rwId];
+    var h3 = document.createElement("h3");
+    h3.style.cssText = "font-size:.85rem;color:var(--navy);margin:14px 0 8px;";
+    h3.textContent = "RWY " + rwId + " — " + (ends[0].width ? ends[0].width + " ft wide" : "width NOT AVAILABLE") + ", " + ends[0].surface + ", " + ends[0].wtBrg;
+    groupsRoot.appendChild(h3);
+    var table = document.createElement("table");
+    function distCell(v){ return v ? Number(v).toLocaleString() + " ft" : "<span class='pill pill-NOTAVAILABLE'>NOT AVAILABLE</span>"; }
+    table.innerHTML = "<thead><tr><th>End</th><th>TORA</th><th>TODA</th><th>ASDA</th><th>LDA</th><th>Displaced Thr</th></tr></thead><tbody>" +
+      ends.map(function(ef){
+        return "<tr><td>" + ef.endId + "</td><td>" + distCell(ef.tora) + "</td><td>" + distCell(ef.toda) + "</td><td>" +
+          distCell(ef.asda) + "</td><td>" + distCell(ef.lda) + "</td><td>" + (ef.hasDisplacedThr ? ef.displacedThrLen + " ft" : "—") + "</td></tr>";
+      }).join("") + "</tbody>";
+    groupsRoot.appendChild(table);
   });
 
-  // Section 5: Criteria evaluation
   var criteriaRoot = $("criteriaTables");
   criteriaRoot.innerHTML = "";
   var any = false;
@@ -364,7 +408,7 @@ function renderPreview(report){
       any = true;
       var h3 = document.createElement("h3");
       h3.style.cssText = "font-size:.85rem;color:var(--navy);margin:16px 0 8px;";
-      h3.textContent = a.aircraftName + " / RWY " + t.runwayId;
+      h3.textContent = a.aircraftName + " / " + t.endId + " (RWY " + t.runwayId + ")";
       criteriaRoot.appendChild(h3);
       var table = document.createElement("table");
       table.innerHTML = "<thead><tr><th>Criterion</th><th>Actual</th><th>Required</th><th>Margin</th><th>Result</th></tr></thead><tbody>" +
@@ -377,15 +421,16 @@ function renderPreview(report){
   if(!any){
     var p = document.createElement("p");
     p.className = "small-note";
-    p.textContent = "No runway currently qualifies for a detailed criteria breakdown for any evaluated aircraft.";
+    p.textContent = "No runway end currently qualifies for a detailed criteria breakdown for any evaluated aircraft.";
     criteriaRoot.appendChild(p);
   }
 
-  // Section 6: FBO
+  // Section 5: FBO
+  $("fboLookupPreview").innerHTML = "Full listing: <a href='" + report.fboLookupUrl + "' target='_blank' rel='noopener noreferrer'>" + report.fboLookupUrl + " &#8599;</a>";
   var fboBody = document.querySelector("#tblFbo tbody");
   fboBody.innerHTML = "";
   if(report.fbo.length === 0){
-    fboBody.innerHTML = '<tr><td colspan="4" class="small-note">No FBO records on file for this airport.</td></tr>';
+    fboBody.innerHTML = '<tr><td colspan="4" class="small-note">No FBO records entered for this airport.</td></tr>';
   } else {
     report.fbo.forEach(function(f){
       var tr = document.createElement("tr");
@@ -395,7 +440,7 @@ function renderPreview(report){
   }
   function pillOrText(v){ return v === "CONFIRM" ? pill("CONFIRM") : v; }
 
-  // Section 7: Disqualifying findings
+  // Section 6: Disqualifying findings
   var findingsList = $("findingsList");
   findingsList.innerHTML = "";
   if(report.disqualifyingFindings.length === 0){
@@ -404,7 +449,7 @@ function renderPreview(report){
     report.disqualifyingFindings.forEach(function(f){ var li = document.createElement("li"); li.textContent = f; findingsList.appendChild(li); });
   }
 
-  // Section 8: Verification items
+  // Section 7: Verification items
   var verifBody = document.querySelector("#tblVerification tbody");
   verifBody.innerHTML = "";
   if(report.verificationItems.length === 0){
@@ -420,6 +465,79 @@ function renderPreview(report){
   $("previewRoot").classList.remove("preview-hidden");
 }
 
+/* -----------------------------------------------------------------------
+   FBO entry (Fix 4) -- the one section with no authoritative feed, so it's
+   plain editable rows. Pre-fillable from fbo-data.js if that ICAO has been
+   researched before; always editable regardless.
+----------------------------------------------------------------------- */
+function fboRowTemplate(values){
+  values = values || {};
+  var row = document.createElement("div");
+  row.className = "fbo-row";
+  function inp(placeholder, val){
+    var i = document.createElement("input");
+    i.type = "text"; i.placeholder = placeholder; i.value = val || "";
+    return i;
+  }
+  var name = inp("FBO name", values.name);
+  var phone = inp("Phone", values.phone);
+  var fuel = inp("Fuel (e.g. Jet A, 100LL)", values.fuel);
+  var services = inp("Services (e.g. hangar, crew car)", values.services);
+  var removeBtn = document.createElement("button");
+  removeBtn.type = "button"; removeBtn.className = "btn-danger"; removeBtn.textContent = "✕";
+  removeBtn.addEventListener("click", function(){ row.remove(); });
+  [name, phone, fuel, services].forEach(function(i){ row.appendChild(i); });
+  row.appendChild(removeBtn);
+  return row;
+}
+function addFboRow(values){
+  $("fboRows").appendChild(fboRowTemplate(values));
+}
+function readFboRows(){
+  return Array.prototype.map.call($("fboRows").querySelectorAll(".fbo-row"), function(row){
+    var inputs = row.querySelectorAll("input");
+    return { name: inputs[0].value.trim(), phone: inputs[1].value.trim(), fuel: inputs[2].value.trim(), services: inputs[3].value.trim() };
+  }).filter(function(f){ return f.name || f.phone || f.fuel || f.services; });
+}
+$("addFboRow").addEventListener("click", function(){ addFboRow(); });
+
+function updateAirnavLink(){
+  var icao = $("icaoInput").value.trim().toUpperCase();
+  var link = $("airnavLink");
+  if(icao.length === 4){
+    link.href = "https://www.airnav.com/airport/" + icao;
+    link.textContent = "Look up FBOs for " + icao + " on AirNav ↗";
+  } else {
+    link.href = "https://www.airnav.com/airport/";
+    link.textContent = "Look up FBOs on AirNav ↗";
+  }
+  var researched = (window.FBO_DATA || {})[icao] || [];
+  var note = $("fboResearchedNote");
+  if(researched.length && $("fboRows").children.length === 0){
+    note.innerHTML = researched.length + " previously researched FBO(s) on file for " + icao + ". <button type='button' class='btn-secondary' id='loadResearchedBtn' style='padding:4px 10px;font-size:.72rem;'>Load them</button>";
+    $("loadResearchedBtn").addEventListener("click", function(){
+      researched.forEach(function(f){
+        addFboRow({ name: f.name, phone: f.phone, fuel: f.fuel, services: [f.gpu && "GPU", f.deice && "De-ice", f.hangar && "Hangar", f.hours && ("Hours: " + f.hours)].filter(Boolean).join(", ") || f.sourceNote });
+      });
+      note.textContent = "Loaded " + researched.length + " researched FBO(s). Edit as needed.";
+    });
+  } else if(!researched.length){
+    note.textContent = icao.length === 4 ? "No previously researched FBOs on file for " + icao + " -- enter manually above." : "";
+  } else {
+    note.textContent = "";
+  }
+}
+$("icaoInput").addEventListener("input", updateAirnavLink);
+
+function currentExtras(){
+  return {
+    manualFbo: readFboRows(),
+    picComments: $("picComments").value.trim(),
+    picName: $("picName").value.trim(),
+    chiefPilotName: $("chiefPilotName").value.trim(),
+  };
+}
+
 function doPreview(){
   var icao = $("icaoInput").value.trim().toUpperCase();
   if(icao.length !== 4){ setStatus("Enter a 4-letter ICAO identifier.", "err"); return; }
@@ -428,7 +546,7 @@ function doPreview(){
 
   loadCriteria().then(function(criteria){
     criteriaData = criteria;
-    var report = window.ReportData.buildReport(icao, window.NASR_AIRPORT_DATA, criteriaData, window.FBO_DATA || {});
+    var report = window.ReportData.buildReport(icao, window.NASR_AIRPORT_DATA, criteriaData, window.FBO_DATA || {}, currentExtras());
     if(report.error){
       setStatus(report.error, "err");
       $("generateBtn").disabled = true;
@@ -448,6 +566,9 @@ function doGenerate(){
   if(!currentReport){ setStatus("Click Preview first.", "err"); return; }
   if(!window.docx){ setStatus("docx library failed to load (vendor/docx.iife.js missing).", "err"); return; }
   setStatus("Generating .docx...", "wait");
+  // Rebuild with the latest FBO/PIC/sign-off entries in case they were
+  // edited after the last Preview click.
+  currentReport = window.ReportData.buildReport(currentReport.icao, window.NASR_AIRPORT_DATA, criteriaData, window.FBO_DATA || {}, currentExtras());
   var doc = window.DocxBuilder.build(currentReport, window.docx);
   window.docx.Packer.toBlob(doc).then(function(blob){
     var d = new Date();

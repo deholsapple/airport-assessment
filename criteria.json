@@ -11,11 +11,20 @@
       "name": "Falcon 50EX",
       "criteria": [
         {
-          "id": "rwyLength",
-          "label": "Runway length",
+          "id": "takeoffDistance",
+          "label": "Takeoff distance",
           "unit": "ft",
           "compare": "min",
-          "source": "runway",
+          "source": "runwayEnd",
+          "threshold": null,
+          "cautionBand": null
+        },
+        {
+          "id": "landingDistance",
+          "label": "Landing distance",
+          "unit": "ft",
+          "compare": "min",
+          "source": "runwayEnd",
           "threshold": null,
           "cautionBand": null
         },
@@ -87,11 +96,20 @@
       "name": "Gulfstream G280",
       "criteria": [
         {
-          "id": "rwyLength",
-          "label": "Runway length",
+          "id": "takeoffDistance",
+          "label": "Takeoff distance",
           "unit": "ft",
           "compare": "min",
-          "source": "runway",
+          "source": "runwayEnd",
+          "threshold": null,
+          "cautionBand": null
+        },
+        {
+          "id": "landingDistance",
+          "label": "Landing distance",
+          "unit": "ft",
+          "compare": "min",
+          "source": "runwayEnd",
           "threshold": null,
           "cautionBand": null
         },

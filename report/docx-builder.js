@@ -77,52 +77,66 @@
     children.push(communicationsTable(D, report.communications));
     children.push(spacer(D));
 
-    children.push(sectionHeading(D, "4.", "RUNWAY EVALUATION — ALL RUNWAYS"));
-    children.push(runwayEvalTable(D, report));
-    children.push(spacer(D));
-
-    children.push(sectionHeading(D, "5.", "CRITERIA EVALUATION"));
+    children.push(sectionHeading(D, "4.", "RUNWAY EVALUATION"));
+    children.push(italicNote(D, "Evaluated per runway end against NASR declared distances (TORA/TODA/ASDA/LDA), not physical length -- " +
+      "a displaced threshold or obstacle can make the declared distance shorter than the runway's physical length on one or both ends. " +
+      "A blank declared distance means NASR has not published one for that end; it is never treated as equal to physical length."));
+    groupEndsByRunway(report.endFacts).forEach(function (group) {
+      children.push(subHeading(D, "RWY " + group.runwayId + " — " + (group.width ? group.width + " ft wide" : "width NOT AVAILABLE") + ", " + group.surface + ", " + group.wtBrg));
+      children.push(declaredDistanceTable(D, group.ends));
+      children.push(spacer(D, 60));
+    });
     var anyCriteriaTable = false;
     report.determinations.forEach(function (a) {
       a.criteriaTables.forEach(function (t) {
         anyCriteriaTable = true;
-        children.push(subHeading(D, a.aircraftName + " / RWY " + t.runwayId));
+        children.push(subHeading(D, a.aircraftName + " / " + t.endId + " (RWY " + t.runwayId + ")"));
         children.push(criteriaTable(D, t.rows));
         children.push(spacer(D, 60));
       });
     });
     if (!anyCriteriaTable) {
-      children.push(italicNote(D, "No runway currently qualifies for a detailed criteria breakdown for any evaluated aircraft."));
+      children.push(italicNote(D, "No runway end currently qualifies for a detailed criteria breakdown for any evaluated aircraft."));
     }
     children.push(italicNote(D, "NOT EVALUATED = threshold not yet set in criteria.json. UNKNOWN = threshold set, but NASR has no actual value to compare."));
     children.push(spacer(D));
 
-    children.push(sectionHeading(D, "6.", "SERVICES AND FBO"));
+    children.push(sectionHeading(D, "5.", "SERVICES AND FBO"));
     children.push(banner(D, "NOT FROM NASR — CONFIRM BY PHONE",
-      "FBO services, hours, and fuel change without notice. These entries are a starting point and a phone number, not a verified fact.",
+      "FBO services, hours, and fuel change without notice. These entries are pilot-entered and/or previously researched -- a starting point and a phone number, not a verified fact.",
       GOLD));
+    children.push(new D.Paragraph({
+      spacing: { after: 100 },
+      children: [
+        run(D, "Full FBO / services listing for " + report.icao + ": ", { size: 18 }),
+        new D.ExternalHyperlink({
+          link: report.fboLookupUrl,
+          children: [run(D, report.fboLookupUrl, { size: 18, color: NAVY, underline: { type: D.UnderlineType.SINGLE } })],
+        }),
+      ],
+    }));
     children.push(fboTable(D, report.fbo));
     children.push(spacer(D));
 
-    children.push(sectionHeading(D, "7.", "DISQUALIFYING FINDINGS"));
+    children.push(sectionHeading(D, "6.", "DISQUALIFYING FINDINGS"));
     children.push(report.disqualifyingFindings.length
       ? findingsTable(D, report.disqualifyingFindings)
       : italicNote(D, "None identified from evaluated criteria."));
     children.push(spacer(D));
 
-    children.push(sectionHeading(D, "8.", "ITEMS REQUIRING VERIFICATION"));
+    children.push(sectionHeading(D, "7.", "ITEMS REQUIRING VERIFICATION"));
     children.push(italicNote(D, "Auto-generated. Every data point the source could not supply becomes an action item."));
     children.push(report.verificationItems.length
       ? verificationTable(D, report.verificationItems)
       : italicNote(D, "None — every field used in this report had a NASR-sourced or confirmed value."));
     children.push(spacer(D));
 
-    children.push(sectionHeading(D, "9.", "PIC NARRATIVE"));
-    children.push(blankBox(D, 3));
+    children.push(sectionHeading(D, "8.", "PIC NARRATIVE"));
+    children.push(narrativeBox(D, report.picComments));
     children.push(spacer(D));
 
-    children.push(sectionHeading(D, "10.", "SIGN-OFF"));
-    children.push(signOffTable(D));
+    children.push(sectionHeading(D, "9.", "SIGN-OFF"));
+    children.push(signOffTable(D, report.picName, report.chiefPilotName));
     children.push(new D.Paragraph({
       children: [new D.TextRun({
         text: "This assessment is a planning guide. The Pilot in Command determines actual airport and runway usability for the conditions at the time of operation.",
@@ -257,11 +271,11 @@
 
   function determinationTable(D, determinations) {
     var headerRow = new D.TableRow({
-      children: [headerCell(D, "AIRCRAFT", 30), headerCell(D, "DETERMINATION", 35), headerCell(D, "QUALIFYING RUNWAYS", 35)],
+      children: [headerCell(D, "AIRCRAFT", 30), headerCell(D, "DETERMINATION", 35), headerCell(D, "QUALIFYING RUNWAY ENDS", 35)],
     });
     var rows = determinations.map(function (a) {
-      var qual = a.qualifyingRunways.length
-        ? a.qualifyingRunways.join(", ") + (a.qualifyingRunways.length === 1 ? " only" : "")
+      var qual = a.qualifyingEnds.length
+        ? a.qualifyingEnds.join(", ") + (a.qualifyingEnds.length === 1 ? " only" : "")
         : "None";
       return new D.TableRow({
         children: [
@@ -330,24 +344,31 @@
     return table(D, [headerRow].concat(rows));
   }
 
-  function runwayEvalTable(D, report) {
-    var aircraftNames = report.determinations.map(function (a) { return a.aircraftName; });
-    var headers = ["RUNWAY", "LENGTH", "WIDTH", "SURFACE", "WT BRG"].concat(aircraftNames);
-    var headerRow = new D.TableRow({ children: headers.map(function (h) { return headerCell(D, h, 100 / headers.length); }) });
-    var rows = report.runwayFacts.map(function (rw, i) {
-      var cells = [
-        bodyCell(D, rw.id, { bold: true }),
-        bodyCell(D, rw.length ? rw.length.toLocaleString("en-US") + " ft" : "—"),
-        bodyCell(D, rw.width ? rw.width + " ft" : "—"),
-        bodyCell(D, rw.surface),
-        bodyCell(D, rw.wtBrg),
-      ];
-      report.determinations.forEach(function (a) {
-        var h = a.headline[i];
-        var text = h.result + (h.marginDisplay && h.marginDisplay !== "—" ? " (" + h.marginDisplay + ")" : "");
-        cells.push(bodyCell(D, text, { bold: true, color: RESULT_COLOR[h.result] }));
+  // Groups the flat per-end fact list back into per-runway blocks (for the
+  // physical/declared-distance summary) while preserving first-seen order.
+  function groupEndsByRunway(endFacts) {
+    var order = [];
+    var byId = {};
+    endFacts.forEach(function (ef) {
+      if (!byId[ef.runwayId]) { byId[ef.runwayId] = { runwayId: ef.runwayId, width: ef.width, surface: ef.surface, wtBrg: ef.wtBrg, ends: [] }; order.push(ef.runwayId); }
+      byId[ef.runwayId].ends.push(ef);
+    });
+    return order.map(function (id) { return byId[id]; });
+  }
+
+  function declaredDistanceTable(D, ends) {
+    var headerRow = new D.TableRow({
+      children: [headerCell(D, "END", 14), headerCell(D, "TORA", 20), headerCell(D, "TODA", 20), headerCell(D, "ASDA", 20), headerCell(D, "LDA", 20), headerCell(D, "DISPL THR", 6)],
+    });
+    var rows = ends.map(function (ef) {
+      function distCell(v) { return bodyCell(D, v ? Number(v).toLocaleString("en-US") + " ft" : "NOT AVAILABLE", { color: v ? undefined : GOLD }); }
+      return new D.TableRow({
+        children: [
+          bodyCell(D, ef.endId, { bold: true }),
+          distCell(ef.tora), distCell(ef.toda), distCell(ef.asda), distCell(ef.lda),
+          bodyCell(D, ef.hasDisplacedThr ? ef.displacedThrLen + " ft" : "—"),
+        ],
       });
-      return new D.TableRow({ children: cells });
     });
     return table(D, [headerRow].concat(rows));
   }
@@ -406,9 +427,17 @@
     return table(D, [headerRow].concat(rows));
   }
 
-  function blankBox(D, lines) {
-    var paras = [];
-    for (var i = 0; i < lines; i++) paras.push(new D.Paragraph({ children: [run(D, "", { size: 20 })] }));
+  // PIC-typed free text if provided; otherwise blank lines for a hand-
+  // written narrative when the report is printed.
+  function narrativeBox(D, text) {
+    var paras;
+    if (text && text.trim()) {
+      paras = text.split("\n").map(function (line) {
+        return new D.Paragraph({ children: [run(D, line, { size: 20 })], spacing: { after: 60 } });
+      });
+    } else {
+      paras = [0, 1, 2].map(function () { return new D.Paragraph({ children: [run(D, "", { size: 20 })] }); });
+    }
     return new D.Table({
       width: { size: CONTENT_WIDTH, type: D.WidthType.DXA },
       borders: {
@@ -419,10 +448,10 @@
     });
   }
 
-  function signOffTable(D) {
+  function signOffTable(D, picName, chiefPilotName) {
     var headerRow = new D.TableRow({ children: [headerCell(D, "ROLE", 25), headerCell(D, "NAME", 30), headerCell(D, "SIGNATURE", 25), headerCell(D, "DATE", 20)] });
-    var rows = ["Pilot in Command", "Chief Pilot"].map(function (role) {
-      return new D.TableRow({ children: [bodyCell(D, role, { bold: true }), bodyCell(D, ""), bodyCell(D, ""), bodyCell(D, "")] });
+    var rows = [["Pilot in Command", picName || ""], ["Chief Pilot", chiefPilotName || ""]].map(function (r) {
+      return new D.TableRow({ children: [bodyCell(D, r[0], { bold: true }), bodyCell(D, r[1]), bodyCell(D, ""), bodyCell(D, "")] });
     });
     return table(D, [headerRow].concat(rows));
   }

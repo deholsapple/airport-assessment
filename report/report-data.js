@@ -1,8 +1,10 @@
 // Pure computation layer for the airport suitability report.
 //
-// Takes NASR airport data + criteria.json + the FBO directory and produces
-// a plain-JS "report model" -- no DOM, no docx library -- so it can run
-// identically in the browser (index.html) and under Node (verify-report.js).
+// Takes NASR airport data + criteria.json + the FBO directory (plus
+// pilot-entered extras: manual FBO rows, PIC comments, sign-off names) and
+// produces a plain-JS "report model" -- no DOM, no docx library -- so it
+// can run identically in the browser (index.html) and under Node
+// (verify-report.js).
 //
 // Core honesty rules this module enforces everywhere, not just in one spot:
 //   - A criterion with threshold === null always reads NOT EVALUATED, no
@@ -11,8 +13,14 @@
 //   - Any value this module cannot source from NASR renders as the literal
 //     string "NOT AVAILABLE" (never a blank, never a guess), and is also
 //     logged as an "Item Requiring Verification".
-//   - Any FBO fact not present in fbo-data.js renders as "CONFIRM" and is
-//     also logged as a verification item.
+//   - Any FBO fact not present in fbo-data.js / not typed in by the pilot
+//     renders as "CONFIRM" and is also logged as a verification item.
+//   - Runway suitability is evaluated per END against NASR's declared
+//     distances (TORA/TODA/ASDA/LDA), never against physical runway
+//     length -- a displaced threshold or obstacle can make the declared
+//     distance shorter than the physical length, and using length would
+//     over-credit the runway in the dangerous direction. A missing
+//     declared distance is NOT AVAILABLE, never a fallback to length.
 (function (root, factory) {
   if (typeof module === "object" && module.exports) {
     module.exports = factory();
@@ -38,6 +46,28 @@
     J: "Jet (unspec.)", J4: "JP-4", J5: "JP-5", J8: "JP-8", "J8+10": "JP-8+10",
     MOGAS: "Mogas", UL91: "UL91", UL94: "UL94",
   };
+
+  // Communications whitelist (Fix 1). NASR's FRQ.csv lists an airport's
+  // TRACON-served named arrival/departure procedure frequencies (one row
+  // per STAR/DP/RNAV transition) right alongside its own tower/ground/
+  // CTAF/ATIS rows. Those procedure rows are real data but they are FMS
+  // routing noise for a suitability report -- a busy Class-B-served field
+  // can have 30+ of them burying the one tower frequency a crew needs.
+  var NAMED_PROCEDURE_RE = /\b(STAR|DP|RNAV)\b/;
+  function isOperationalFrequency(f) {
+    var use = (f.use || "").toUpperCase().trim();
+    if (!use) return false;
+    if (NAMED_PROCEDURE_RE.test(use)) return false; // named arrival/departure procedure -- drop regardless of category
+    // UHF military band (225+ MHz) duplicate of a civil VHF frequency --
+    // not usable by a civilian business jet, so not "operational" here.
+    var freqNum = parseFloat(f.freq);
+    if (isFinite(freqNum) && freqNum >= 225) return false;
+    if (use === "ATIS" || use === "CTAF") return true;
+    if (/\bASOS\b|\bAWOS\b/.test(use)) return true;
+    if (/^(LCL|GND|CD)\/P$/.test(use)) return true; // tower / ground / clearance delivery, primary
+    if (/^(APCH\/P( DEP\/P)?|DEP\/P)$/.test(use)) return true; // primary approach/departure only (not secondary, not named)
+    return false;
+  }
 
   // -----------------------------------------------------------------------
   // Small helpers
@@ -143,22 +173,24 @@
   }
 
   // -----------------------------------------------------------------------
-  // Communications (Section 3)
+  // Communications (Section 3) -- Fix 1: operational set only, de-duped.
   // -----------------------------------------------------------------------
   function buildCommunications(rec) {
-    return (rec.frequencies || []).map(function (f) {
-      return {
-        facilityType: f.facilityType,
-        call: f.call,
-        freq: f.freq,
-        use: f.use,
-        remark: f.remark,
-      };
+    var seen = {};
+    var result = [];
+    (rec.frequencies || []).forEach(function (f) {
+      if (!isOperationalFrequency(f)) return;
+      var key = (f.freq || "") + "|" + (f.use || "");
+      if (seen[key]) return;
+      seen[key] = true;
+      result.push({ facilityType: f.facilityType, call: f.call, freq: f.freq, use: f.use, remark: f.remark });
     });
+    return result;
   }
 
   // -----------------------------------------------------------------------
-  // Runway lighting summary used by both Section 4 (terse) and criteria (Section 5)
+  // Runway lighting summary + weight-bearing compact notation, shared by
+  // the merged runway/criteria section.
   // -----------------------------------------------------------------------
   function lightingSummary(rw) {
     var parts = [];
@@ -243,13 +275,26 @@
     return "≤ " + fmtNum(def.threshold) + unit;
   }
 
-  // Resolves the "actual" side for one criterion against one runway (plus
-  // airport-level facts that don't vary by runway).
-  function actualFor(criterionId, rec, rw, gaps) {
+  // Resolves the "actual" side for one criterion against one runway end
+  // (ctx.end) plus its parent runway (ctx.rw) and the airport (rec).
+  function actualFor(criterionId, rec, ctx, gaps) {
+    var rw = ctx.rw, end = ctx.end;
+    var label = end.id + " (RWY " + rw.id + ")";
     switch (criterionId) {
-      case "rwyLength":
-        return rw.length ? { available: true, value: rw.length, display: fmtNum(rw.length) + " ft" }
-          : { available: false, display: gaps.na("Runway " + rw.id + " length not in NASR", "Verify via Chart Supplement") };
+      case "takeoffDistance": {
+        var tora = parseIntOrNull(end.tora), toda = parseIntOrNull(end.toda), asda = parseIntOrNull(end.asda);
+        if (tora === null || toda === null || asda === null) {
+          return { available: false, display: gaps.na(label + ": declared takeoff distances (TORA/TODA/ASDA) not fully published in NASR", "Verify via Chart Supplement / Airport Diagram") };
+        }
+        var limiting = Math.min(tora, toda, asda);
+        var which = limiting === asda ? "ASDA" : limiting === toda ? "TODA" : "TORA";
+        return { available: true, value: limiting, display: fmtNum(limiting) + " ft (" + which + ")" };
+      }
+      case "landingDistance": {
+        var lda = parseIntOrNull(end.lda);
+        if (lda === null) return { available: false, display: gaps.na(label + ": declared landing distance (LDA) not published in NASR", "Verify via Chart Supplement / Airport Diagram") };
+        return { available: true, value: lda, display: fmtNum(lda) + " ft (LDA)" };
+      }
       case "rwyWidth":
         return rw.width ? { available: true, value: rw.width, display: fmtNum(rw.width) + " ft" }
           : { available: false, display: gaps.na("Runway " + rw.id + " width not in NASR", "Verify via Chart Supplement") };
@@ -284,77 +329,11 @@
   }
 
   // -----------------------------------------------------------------------
-  // Runway evaluation (Section 4) + criteria evaluation (Section 5) +
-  // determination (Section 1), computed together since determination
-  // depends on the full per-runway criteria results.
+  // Merged runway + criteria evaluation (Sections formerly 4 & 5, now one).
+  // Evaluated per runway END, not per physical runway, because declared
+  // distances are directional -- a displaced threshold or obstacle at one
+  // end does not necessarily affect the opposite end.
   // -----------------------------------------------------------------------
-  function buildRunwaysAndCriteria(rec, criteriaData, gaps) {
-    var runwayFacts = (rec.runways || []).map(function (rw) {
-      return {
-        id: rw.id,
-        length: rw.length,
-        width: rw.width,
-        surface: rw.surfaceDesc || rw.surface || gaps.na("Runway " + rw.id + " surface not in NASR", "Verify via Chart Supplement"),
-        wtBrg: weightBearingCompact(rw) || gaps.na("Runway " + rw.id + " weight bearing not in NASR", "Verify via Chart Supplement"),
-      };
-    });
-
-    var perAircraft = criteriaData.aircraft.map(function (aircraft) {
-      var lengthDef = aircraft.criteria.filter(function (c) { return c.id === "rwyLength"; })[0];
-
-      // Section 4: headline per-runway verdict, driven by runway length only.
-      var headline = (rec.runways || []).map(function (rw) {
-        var actual = actualFor("rwyLength", rec, rw, gaps);
-        var row = evaluateCriterion(lengthDef, actual);
-        return { runwayId: rw.id, result: row.result, marginDisplay: row.marginDisplay };
-      });
-
-      // Section 5: full multi-criterion table, one per runway that isn't a
-      // headline FAIL (a runway that fails on raw length isn't "qualifying"
-      // and doesn't get a detailed breakdown -- matches the sample).
-      var criteriaTables = [];
-      (rec.runways || []).forEach(function (rw, i) {
-        if (headline[i].result === "FAIL") return;
-        var rows = aircraft.criteria.map(function (def) {
-          var actual = actualFor(def.id, rec, rw, gaps);
-          return evaluateCriterion(def, actual);
-        });
-        var worst = worstResult(rows.map(function (r) { return r.result; }));
-        criteriaTables.push({ runwayId: rw.id, rows: rows, verdict: worst });
-      });
-
-      // Determination: which runways are usable (no FAIL in the full table)
-      // vs. clean (every row PASS) vs. disqualified.
-      var qualifying = criteriaTables.filter(function (t) { return t.verdict !== "FAIL"; });
-      var clean = qualifying.filter(function (t) { return t.verdict === "PASS"; });
-
-      var determination;
-      if (clean.length > 0) determination = "SUITABLE";
-      else if (qualifying.length > 0) determination = "SUITABLE WITH LIMITATIONS";
-      else determination = "NOT SUITABLE";
-
-      var qualifyingIds = qualifying.map(function (t) { return t.runwayId; });
-      var note = null;
-      if (qualifying.length === 0) {
-        note = aircraft.name + ": no runway meets evaluated criteria (or none have been evaluated yet).";
-      } else if (qualifying.length === 1) {
-        note = aircraft.name + ": single qualifying runway (" + qualifyingIds[0] + "). If it is out of service, no runway on the field currently qualifies.";
-      }
-
-      return {
-        aircraftId: aircraft.id,
-        aircraftName: aircraft.name,
-        headline: headline,
-        determination: determination,
-        qualifyingRunways: qualifyingIds,
-        note: note,
-        criteriaTables: criteriaTables,
-      };
-    });
-
-    return { runwayFacts: runwayFacts, perAircraft: perAircraft };
-  }
-
   var RESULT_SEVERITY = { FAIL: 3, UNKNOWN: 2, CAUTION: 2, "NOT EVALUATED": 1, PASS: 0 };
   function worstResult(results) {
     var worst = "PASS";
@@ -364,49 +343,116 @@
     return worst;
   }
 
-  // -----------------------------------------------------------------------
-  // Services & FBO (Section 6)
-  // -----------------------------------------------------------------------
-  function buildFbo(icao, fboData, gaps) {
-    var list = (fboData && fboData[icao]) || [];
-    if (list.length === 0) return [];
-    return list.map(function (fbo) {
+  function buildEndsAndCriteria(rec, criteriaData, gaps) {
+    var endFacts = [];
+    (rec.runways || []).forEach(function (rw) {
+      (rw.ends || []).forEach(function (end) {
+        endFacts.push({
+          endId: end.id,
+          runwayId: rw.id,
+          width: rw.width,
+          surface: rw.surfaceDesc || rw.surface || gaps.na("Runway " + rw.id + " surface not in NASR", "Verify via Chart Supplement"),
+          wtBrg: weightBearingCompact(rw) || gaps.na("Runway " + rw.id + " weight bearing not in NASR", "Verify via Chart Supplement"),
+          tora: end.tora || null,
+          toda: end.toda || null,
+          asda: end.asda || null,
+          lda: end.lda || null,
+          hasDisplacedThr: end.hasDisplacedThr,
+          displacedThrLen: end.displacedThrLen,
+          _rw: rw, _end: end,
+        });
+      });
+    });
+
+    var perAircraft = criteriaData.aircraft.map(function (aircraft) {
+      var criteriaTables = [];
+      endFacts.forEach(function (ef) {
+        var rows = aircraft.criteria.map(function (def) {
+          var actual = actualFor(def.id, rec, { rw: ef._rw, end: ef._end }, gaps);
+          return evaluateCriterion(def, actual);
+        });
+        var verdict = worstResult(rows.map(function (r) { return r.result; }));
+        criteriaTables.push({ endId: ef.endId, runwayId: ef.runwayId, rows: rows, verdict: verdict });
+      });
+
+      var qualifying = criteriaTables.filter(function (t) { return t.verdict !== "FAIL"; });
+      var clean = qualifying.filter(function (t) { return t.verdict === "PASS"; });
+
+      var determination;
+      if (clean.length > 0) determination = "SUITABLE";
+      else if (qualifying.length > 0) determination = "SUITABLE WITH LIMITATIONS";
+      else determination = "NOT SUITABLE";
+
+      var qualifyingIds = qualifying.map(function (t) { return t.endId; });
+      var note = null;
+      if (qualifying.length === 0) {
+        note = aircraft.name + ": no runway end meets evaluated criteria (or none have been evaluated yet).";
+      } else if (qualifying.length === 1) {
+        note = aircraft.name + ": single qualifying runway end (" + qualifyingIds[0] + "). If it is out of service, no end on the field currently qualifies.";
+      }
+
       return {
-        name: fbo.name || gaps.confirm(fbo.name ? "" : "Unnamed FBO record for " + icao, "Identify and confirm FBO name"),
-        phone: fbo.phone || gaps.confirm((fbo.name || "FBO") + " phone not confirmed", "Look up and confirm before dispatch"),
-        fuel: fbo.fuel || gaps.confirm((fbo.name || "FBO") + " fuel availability not confirmed", "Call to confirm fuel"),
-        services: [fbo.gpu ? "GPU" : "", fbo.deice ? "De-ice" : "", fbo.hangar ? "Hangar" : "", fbo.hours ? "Hours: " + fbo.hours : ""]
-          .filter(Boolean).join(", ") || fbo.sourceNote || gaps.confirm((fbo.name || "FBO") + " services not confirmed", "Call to confirm services"),
+        aircraftId: aircraft.id,
+        aircraftName: aircraft.name,
+        determination: determination,
+        qualifyingEnds: qualifyingIds,
+        note: note,
+        criteriaTables: criteriaTables,
       };
     });
+
+    return { endFacts: endFacts, perAircraft: perAircraft };
+  }
+
+  // -----------------------------------------------------------------------
+  // Services & FBO (Section 6) -- Fix 4: pilot-entered rows take priority
+  // over (and are merged with) whatever's in fbo-data.js; anything still
+  // blank prints CONFIRM.
+  // -----------------------------------------------------------------------
+  function buildFbo(icao, fboData, manualFbo, gaps) {
+    var researched = (fboData && fboData[icao]) || [];
+    var list = (manualFbo && manualFbo.length) ? manualFbo : researched;
+    if (list.length === 0) return [];
+    return list.map(function (fbo) {
+      var name = fbo.name || gaps.confirm("Unnamed FBO record for " + icao, "Identify and confirm FBO name");
+      return {
+        name: name,
+        phone: fbo.phone || gaps.confirm(name + " phone not confirmed", "Look up and confirm before dispatch"),
+        fuel: fbo.fuel || gaps.confirm(name + " fuel availability not confirmed", "Call to confirm fuel"),
+        services: fbo.services || (
+          [fbo.gpu ? "GPU" : "", fbo.deice ? "De-ice" : "", fbo.hangar ? "Hangar" : "", fbo.hours ? "Hours: " + fbo.hours : ""]
+            .filter(Boolean).join(", ") || fbo.sourceNote
+        ) || gaps.confirm(name + " services not confirmed", "Call to confirm services"),
+      };
+    });
+  }
+
+  function airnavUrl(icao) {
+    return "https://www.airnav.com/airport/" + icao;
   }
 
   // -----------------------------------------------------------------------
   // Disqualifying findings (Section 7) -- mechanical, derived only from
   // actual FAIL results already computed above. No new judgment calls.
   // -----------------------------------------------------------------------
-  function buildDisqualifyingFindings(rec, perAircraft) {
+  function buildDisqualifyingFindings(perAircraft) {
     var findings = [];
-    (rec.runways || []).forEach(function (rw) {
-      var failing = perAircraft.filter(function (a) {
-        var h = a.headline.filter(function (h) { return h.runwayId === rw.id; })[0];
-        return h && h.result === "FAIL";
+    var byEnd = {};
+    perAircraft.forEach(function (a) {
+      a.criteriaTables.forEach(function (t) {
+        if (t.verdict !== "FAIL") return;
+        var key = t.runwayId + "|" + t.endId;
+        byEnd[key] = byEnd[key] || { runwayId: t.runwayId, endId: t.endId, aircraft: [] };
+        byEnd[key].aircraft.push(a.aircraftName);
       });
-      if (failing.length === 0) return;
-      var names = failing.map(function (a) { return a.aircraftName; });
-      var margins = failing.map(function (a) {
-        var h = a.headline.filter(function (h) { return h.runwayId === rw.id; })[0];
-        return h.marginDisplay;
-      });
-      var allSame = margins.every(function (m) { return m === margins[0]; });
-      var text = allSame
-        ? "RWY " + rw.id + " (" + fmtNum(rw.length || 0) + " ft): below minimum length for " + names.join(" and ") + " (" + margins[0] + ")."
-        : "RWY " + rw.id + " (" + fmtNum(rw.length || 0) + " ft): below minimum length for " + names.map(function (n, i) { return n + " (" + margins[i] + ")"; }).join("; ") + ".";
-      findings.push(text);
+    });
+    Object.keys(byEnd).forEach(function (key) {
+      var e = byEnd[key];
+      findings.push("RWY " + e.runwayId + " (end " + e.endId + "): does not meet evaluated criteria for " + e.aircraft.join(" and ") + ".");
     });
     perAircraft.forEach(function (a) {
       if (a.determination === "NOT SUITABLE") {
-        findings.push(a.aircraftName + " — airport: no runway meets evaluated criteria for this aircraft.");
+        findings.push(a.aircraftName + " — airport: no runway end meets evaluated criteria for this aircraft.");
       }
     });
     return findings;
@@ -415,7 +461,8 @@
   // -----------------------------------------------------------------------
   // Top-level build
   // -----------------------------------------------------------------------
-  function buildReport(icao, airportData, criteriaData, fboData) {
+  function buildReport(icao, airportData, criteriaData, fboData, extras) {
+    extras = extras || {};
     var rec = (airportData || {})[icao];
     if (!rec) return { error: "No NASR record found for ICAO \"" + icao + "\" in the embedded dataset." };
 
@@ -423,9 +470,9 @@
 
     var facility = buildFacility(rec, gaps);
     var communications = buildCommunications(rec);
-    var runwaysAndCriteria = buildRunwaysAndCriteria(rec, criteriaData, gaps);
-    var fbo = buildFbo(icao, fboData, gaps);
-    var disqualifying = buildDisqualifyingFindings(rec, runwaysAndCriteria.perAircraft);
+    var endsAndCriteria = buildEndsAndCriteria(rec, criteriaData, gaps);
+    var fbo = buildFbo(icao, fboData, extras.manualFbo, gaps);
+    var disqualifying = buildDisqualifyingFindings(endsAndCriteria.perAircraft);
 
     return {
       icao: rec.icao,
@@ -436,11 +483,15 @@
       criteriaNote: (criteriaData.meta && criteriaData.meta.note) || "",
       facility: facility,
       communications: communications,
-      runwayFacts: runwaysAndCriteria.runwayFacts,
-      determinations: runwaysAndCriteria.perAircraft,
+      endFacts: endsAndCriteria.endFacts,
+      determinations: endsAndCriteria.perAircraft,
       fbo: fbo,
+      fboLookupUrl: airnavUrl(rec.icao),
       disqualifyingFindings: disqualifying,
       verificationItems: gaps.items,
+      picComments: extras.picComments || "",
+      picName: extras.picName || "",
+      chiefPilotName: extras.chiefPilotName || "",
     };
   }
 
