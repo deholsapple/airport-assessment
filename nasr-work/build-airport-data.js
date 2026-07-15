@@ -401,6 +401,19 @@ for (const r of aptRwyEnd) {
     tch: r.THR_CROSSING_HGT || "",
     glidePathAngle: r.VISUAL_GLIDE_PATH_ANGLE || "",
     elev: r.RWY_END_ELEV || "",
+    // Declared distances (FAR 1.2 / TERPS terms). These are per-END and
+    // directional -- a displaced threshold or an obstacle can make the
+    // declared distance shorter than the runway's physical length, and
+    // that shortfall only shows up on the affected end/direction. Using
+    // physical length in place of a missing declared distance would
+    // over-credit the runway, which is the wrong direction to be wrong
+    // in. Blank here means NASR has not published one for this end --
+    // that must surface as NOT AVAILABLE, never silently fall back to
+    // physical length.
+    tora: r.TKOF_RUN_AVBL || "", // Takeoff Run Available
+    toda: r.TKOF_DIST_AVBL || "", // Takeoff Distance Available
+    asda: r.ACLT_STOP_DIST_AVBL || "", // Accelerate-Stop Distance Available
+    lda: r.LNDG_DIST_AVBL || "", // Landing Distance Available
   });
 }
 

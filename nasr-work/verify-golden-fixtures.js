@@ -82,6 +82,38 @@ function findEnd(rw, id) {
     eq("KDTO 18R/36L width", rw2.width, 75);
   }
 
+  // Declared distances are per-end and directional. 18L has no displaced
+  // threshold of its own, but its published LDA (6,502 ft) is still 500 ft
+  // short of the runway's physical length (7,002 ft) -- proof that a
+  // consumer must use the declared distance, not physical length, or it
+  // over-credits the runway by exactly that margin.
+  if (rw1) {
+    const end18L = findEnd(rw1, "18L");
+    ok("KDTO 18L end exists", !!end18L);
+    if (end18L) {
+      eq("KDTO 18L declared distances (TORA/TODA/ASDA/LDA)",
+        [end18L.tora, end18L.toda, end18L.asda, end18L.lda], ["7002", "7002", "6502", "6502"]);
+      ok("KDTO 18L LDA (6502) differs from physical length (7002)", end18L.lda !== String(rw1.length));
+    }
+    const end36R = findEnd(rw1, "36R");
+    ok("KDTO 36R end exists", !!end36R);
+    if (end36R) {
+      eq("KDTO 36R declared distances (TORA/TODA/ASDA/LDA)",
+        [end36R.tora, end36R.toda, end36R.asda, end36R.lda], ["7002", "7002", "6602", "6502"]);
+    }
+  }
+
+  // The secondary runway has no published declared distances at all --
+  // must read as blank/NOT AVAILABLE upstream, never fall back to length.
+  if (rw2) {
+    const end18R = findEnd(rw2, "18R");
+    ok("KDTO 18R end exists", !!end18R);
+    if (end18R) {
+      eq("KDTO 18R has no declared distances published (blank, not a fallback value)",
+        [end18R.tora, end18R.toda, end18R.asda, end18R.lda], ["", "", "", ""]);
+    }
+  }
+
   // Bug #1: tower freq 119.95 must survive -- it used to be pushed past
   // the "first 20" cap by ~30 TRACON procedure rows that precede it in FRQ.csv.
   const twrFreq = rec.frequencies.find((f) => f.freq === "119.95" && f.use === "LCL/P");
