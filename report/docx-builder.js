@@ -1,6 +1,6 @@
-// Renders a report-data.js report model into a docx.Document, matching the
-// layout of KDTO-suitability-SAMPLE.docx (colors, table structure, section
-// order). Takes the docx library as a parameter (window.docx in the browser,
+// Renders a report-data.js report model into a docx.Document -- a first-
+// pass screening report, not a performance-suitability determination.
+// Takes the docx library as a parameter (window.docx in the browser,
 // require("docx") under Node) so this file has no environment dependency.
 (function (root, factory) {
   if (typeof module === "object" && module.exports) {
@@ -13,6 +13,7 @@
 
   var NAVY = "1F3864";
   var BANNER_BG = "FFF2CC";
+  var INFO_BANNER_BG = "DCE6F1";
   var RED = "C00000";
   var GOLD = "7F6000";
   var AMBER = "BF8F00";
@@ -21,29 +22,36 @@
   var GRAY_NOTE = "595959";
   var WHITE = "FFFFFF";
 
-  var CONTENT_WIDTH = 9360; // 6.5in at 1440 dxa/in -- matches the sample's page margins.
+  var CONTENT_WIDTH = 9360; // 6.5in at 1440 dxa/in
   var FONT = "Calibri";
 
   var RESULT_COLOR = {
     PASS: GREEN, CAUTION: AMBER, FAIL: RED, UNKNOWN: GOLD, "NOT EVALUATED": GRAY_NOTE,
   };
-  var DETERMINATION_COLOR = {
-    SUITABLE: GREEN, "SUITABLE WITH LIMITATIONS": AMBER, "NOT SUITABLE": RED,
+  var BUCKET_COLOR = {
+    "CLEAR DISQUALIFIER": RED,
+    "REVIEW WITH CHIEF PILOT": AMBER,
+    "SCREENS OK — PERFORMANCE CALC REQUIRED": GREEN,
   };
 
   function build(report, D) {
     var children = [];
 
+    children.push(banner(D,
+      "FIRST-PASS SCREENING ONLY",
+      "Performance calculation (ForeFlight) required before dispatch. Marginal items are to be reviewed with the Chief Pilot. " +
+      "This report never replaces PIC judgment and does not substitute for a DOA/ForeFlight determination.",
+      NAVY, INFO_BANNER_BG));
+
     if (!report.verified) {
       children.push(banner(D,
         "CRITERIA NOT VERIFIED",
-        "One or more evaluation thresholds in criteria.json have not been reviewed against the AFM / ops specs. " +
-        "Every criterion below that depends on an unset threshold reads NOT EVALUATED. Do not use for dispatch.",
-        RED));
+        "Weight-bearing thresholds in criteria.json have not been reviewed against a real company minimum. Every criterion depending on an unset threshold reads NOT EVALUATED.",
+        RED, BANNER_BG));
     }
 
     children.push(new D.Paragraph({
-      children: [new D.TextRun({ text: "AIRPORT SUITABILITY ASSESSMENT", bold: true, color: NAVY, font: FONT, size: 32 })],
+      children: [new D.TextRun({ text: "AIRPORT SCREENING REPORT", bold: true, color: NAVY, font: FONT, size: 32 })],
       spacing: { after: 40 },
     }));
     children.push(new D.Paragraph({
@@ -60,7 +68,7 @@
     children.push(sectionHeading(D, "1.", "DETERMINATION"));
     children.push(determinationTable(D, report.determinations));
     report.determinations.forEach(function (a) {
-      if (a.note) children.push(italicNote(D, a.note));
+      a.reasons.forEach(function (r) { children.push(italicNote(D, a.aircraftName + ": " + r)); });
     });
     children.push(spacer(D));
 
@@ -78,33 +86,30 @@
     children.push(spacer(D));
 
     children.push(sectionHeading(D, "4.", "RUNWAY EVALUATION"));
-    children.push(italicNote(D, "Evaluated per runway end against NASR declared distances (TORA/TODA/ASDA/LDA), not physical length -- " +
-      "a displaced threshold or obstacle can make the declared distance shorter than the runway's physical length on one or both ends. " +
-      "A blank declared distance means NASR has not published one for that end; it is never treated as equal to physical length."));
-    groupEndsByRunway(report.endFacts).forEach(function (group) {
+    children.push(italicNote(D, "No static minimum runway length applies (PACCAR FOM) -- length/width/weight performance is a function of the day's " +
+      "weight, weather, and conditions and belongs in a ForeFlight performance calculation, not a static screen. Declared distances below are a " +
+      "reference fact for that calculation, not a pass/fail gate. The only static screen kept here is hard surface + weight-bearing class."));
+    groupEndsByRunway(report.endFacts, report.runwayFacts).forEach(function (group) {
       children.push(subHeading(D, "RWY " + group.runwayId + " — " + (group.width ? group.width + " ft wide" : "width NOT AVAILABLE") + ", " + group.surface + ", " + group.wtBrg));
       children.push(declaredDistanceTable(D, group.ends));
       children.push(spacer(D, 60));
     });
-    var anyCriteriaTable = false;
     report.determinations.forEach(function (a) {
-      a.criteriaTables.forEach(function (t) {
-        anyCriteriaTable = true;
-        children.push(subHeading(D, a.aircraftName + " / " + t.endId + " (RWY " + t.runwayId + ")"));
-        children.push(criteriaTable(D, t.rows));
-        children.push(spacer(D, 60));
-      });
+      children.push(subHeading(D, a.aircraftName + " — hard surface / weight-bearing screen"));
+      children.push(runwayScreenTable(D, a.runwayScreens));
+      children.push(spacer(D, 60));
     });
-    if (!anyCriteriaTable) {
-      children.push(italicNote(D, "No runway end currently qualifies for a detailed criteria breakdown for any evaluated aircraft."));
-    }
     children.push(italicNote(D, "NOT EVALUATED = threshold not yet set in criteria.json. UNKNOWN = threshold set, but NASR has no actual value to compare."));
     children.push(spacer(D));
 
-    children.push(sectionHeading(D, "5.", "SERVICES AND FBO"));
+    children.push(sectionHeading(D, "5.", "NIGHT OPERATIONS & RECENCY"));
+    children.push(nightOpsSection(D, report.nightOps));
+    children.push(spacer(D));
+
+    children.push(sectionHeading(D, "6.", "SERVICES AND FBO"));
     children.push(banner(D, "NOT FROM NASR — CONFIRM BY PHONE",
       "FBO services, hours, and fuel change without notice. These entries are pilot-entered and/or previously researched -- a starting point and a phone number, not a verified fact.",
-      GOLD));
+      GOLD, BANNER_BG));
     children.push(new D.Paragraph({
       spacing: { after: 100 },
       children: [
@@ -118,28 +123,29 @@
     children.push(fboTable(D, report.fbo));
     children.push(spacer(D));
 
-    children.push(sectionHeading(D, "6.", "DISQUALIFYING FINDINGS"));
+    children.push(sectionHeading(D, "7.", "DISQUALIFYING FINDINGS"));
     children.push(report.disqualifyingFindings.length
       ? findingsTable(D, report.disqualifyingFindings)
       : italicNote(D, "None identified from evaluated criteria."));
     children.push(spacer(D));
 
-    children.push(sectionHeading(D, "7.", "ITEMS REQUIRING VERIFICATION"));
-    children.push(italicNote(D, "Auto-generated. Every data point the source could not supply becomes an action item."));
+    children.push(sectionHeading(D, "8.", "ITEMS REQUIRING VERIFICATION"));
+    children.push(italicNote(D, "Auto-generated. Every data point the source could not supply, and every marginal screening condition, becomes an action item."));
     children.push(report.verificationItems.length
       ? verificationTable(D, report.verificationItems)
       : italicNote(D, "None — every field used in this report had a NASR-sourced or confirmed value."));
     children.push(spacer(D));
 
-    children.push(sectionHeading(D, "8.", "PIC NARRATIVE"));
+    children.push(sectionHeading(D, "9.", "PIC NARRATIVE"));
     children.push(narrativeBox(D, report.picComments));
     children.push(spacer(D));
 
-    children.push(sectionHeading(D, "9.", "SIGN-OFF"));
+    children.push(sectionHeading(D, "10.", "SIGN-OFF"));
     children.push(signOffTable(D, report.picName, report.chiefPilotName));
     children.push(new D.Paragraph({
       children: [new D.TextRun({
-        text: "This assessment is a planning guide. The Pilot in Command determines actual airport and runway usability for the conditions at the time of operation.",
+        text: "This report is a first-pass screening aid. The Pilot in Command determines actual airport and runway usability for the conditions " +
+          "at the time of operation, following a ForeFlight performance calculation. Marginal or flagged items are reviewed with the Chief Pilot per FOM §2.7.4.",
         italics: true, color: GRAY_NOTE, font: FONT, size: 16,
       })],
       spacing: { before: 160 },
@@ -147,8 +153,8 @@
     }));
 
     return new D.Document({
-      creator: "Airport Suitability Report Generator",
-      title: "Airport Suitability Assessment - " + report.icao,
+      creator: "Airport Screening Report Generator",
+      title: "Airport Screening Report - " + report.icao,
       sections: [{
         properties: { page: { margin: { top: 1440, bottom: 1440, left: 1440, right: 1440 } } },
         children: children,
@@ -233,7 +239,7 @@
       rows: rows,
     });
   }
-  function banner(D, title, sub, color) {
+  function banner(D, title, sub, titleColor, bg) {
     return new D.Table({
       width: { size: CONTENT_WIDTH, type: D.WidthType.DXA },
       borders: {
@@ -246,11 +252,11 @@
       },
       rows: [new D.TableRow({
         children: [new D.TableCell({
-          shading: { fill: BANNER_BG, type: D.ShadingType.CLEAR },
+          shading: { fill: bg, type: D.ShadingType.CLEAR },
           margins: { top: 100, bottom: 100, left: 120, right: 120 },
           children: [
-            new D.Paragraph({ children: [run(D, title, { bold: true, color: color, size: 20 })] }),
-            new D.Paragraph({ children: [run(D, sub, { color: GOLD, size: 16 })] }),
+            new D.Paragraph({ children: [run(D, title, { bold: true, color: titleColor, size: 20 })] }),
+            new D.Paragraph({ children: [run(D, sub, { color: titleColor === RED ? GOLD : GRAY_TEXT, size: 16 })] }),
           ],
         })],
       })],
@@ -271,17 +277,13 @@
 
   function determinationTable(D, determinations) {
     var headerRow = new D.TableRow({
-      children: [headerCell(D, "AIRCRAFT", 30), headerCell(D, "DETERMINATION", 35), headerCell(D, "QUALIFYING RUNWAY ENDS", 35)],
+      children: [headerCell(D, "AIRCRAFT", 30), headerCell(D, "SCREENING RESULT", 70)],
     });
     var rows = determinations.map(function (a) {
-      var qual = a.qualifyingEnds.length
-        ? a.qualifyingEnds.join(", ") + (a.qualifyingEnds.length === 1 ? " only" : "")
-        : "None";
       return new D.TableRow({
         children: [
           bodyCell(D, a.aircraftName, { bold: true }),
-          bodyCell(D, a.determination, { bold: true, color: DETERMINATION_COLOR[a.determination] }),
-          bodyCell(D, qual),
+          bodyCell(D, a.bucket, { bold: true, color: BUCKET_COLOR[a.bucket] }),
         ],
       });
     });
@@ -344,14 +346,18 @@
     return table(D, [headerRow].concat(rows));
   }
 
-  // Groups the flat per-end fact list back into per-runway blocks (for the
-  // physical/declared-distance summary) while preserving first-seen order.
-  function groupEndsByRunway(endFacts) {
+  // Groups the flat per-end fact list back into per-runway blocks, joined
+  // with the runway-level physical facts (width/surface/wt brg).
+  function groupEndsByRunway(endFacts, runwayFacts) {
     var order = [];
     var byId = {};
     endFacts.forEach(function (ef) {
-      if (!byId[ef.runwayId]) { byId[ef.runwayId] = { runwayId: ef.runwayId, width: ef.width, surface: ef.surface, wtBrg: ef.wtBrg, ends: [] }; order.push(ef.runwayId); }
+      if (!byId[ef.runwayId]) { byId[ef.runwayId] = { runwayId: ef.runwayId, ends: [] }; order.push(ef.runwayId); }
       byId[ef.runwayId].ends.push(ef);
+    });
+    order.forEach(function (id) {
+      var rwFact = runwayFacts.filter(function (r) { return r.id === id; })[0];
+      if (rwFact) { byId[id].width = rwFact.width; byId[id].surface = rwFact.surface; byId[id].wtBrg = rwFact.wtBrg; }
     });
     return order.map(function (id) { return byId[id]; });
   }
@@ -373,22 +379,57 @@
     return table(D, [headerRow].concat(rows));
   }
 
-  function criteriaTable(D, rows) {
+  function runwayScreenTable(D, runwayScreens) {
     var headerRow = new D.TableRow({
-      children: [headerCell(D, "CRITERION", 26), headerCell(D, "ACTUAL", 22), headerCell(D, "REQUIRED", 20), headerCell(D, "MARGIN", 14), headerCell(D, "RESULT", 18)],
+      children: [headerCell(D, "RUNWAY", 16), headerCell(D, "HARD SURFACE", 28), headerCell(D, "WEIGHT BEARING (DW)", 28), headerCell(D, "VERDICT", 28)],
     });
-    var dataRows = rows.map(function (r) {
+    var rows = runwayScreens.map(function (rs) {
+      var s = rs.rows.filter(function (r) { return r.id === "surface"; })[0];
+      var w = rs.rows.filter(function (r) { return r.id === "wtBearingDW"; })[0];
       return new D.TableRow({
         children: [
-          bodyCell(D, r.label, { bold: true }),
-          bodyCell(D, r.actualDisplay, { color: r.actualDisplay === "NOT AVAILABLE" ? GOLD : undefined }),
-          bodyCell(D, r.requiredDisplay),
-          bodyCell(D, r.marginDisplay),
-          resultCell(D, r.result),
+          bodyCell(D, rs.runwayId, { bold: true }),
+          bodyCell(D, s.actualDisplay + " (" + s.result + ")", { color: RESULT_COLOR[s.result] }),
+          bodyCell(D, w.actualDisplay + " (" + w.result + ")", { color: RESULT_COLOR[w.result] }),
+          resultCell(D, rs.verdict),
         ],
       });
     });
-    return table(D, [headerRow].concat(dataRows));
+    return table(D, [headerRow].concat(rows));
+  }
+
+  function nightOpsSection(D, nightOps) {
+    var rows = [];
+    function row(label, value, opts) {
+      rows.push(new D.TableRow({
+        children: [
+          bodyCell(D, label, { bold: true, size: 14, color: GRAY_NOTE, widthPct: 35 }),
+          bodyCell(D, value, Object.assign({ widthPct: 65 }, opts || {})),
+        ],
+      }));
+    }
+    row("2-YEAR RECENCY", nightOps.recency.note);
+    row("INSTRUMENT APPROACH", nightOps.instrumentApproach.effectiveLabel +
+      (nightOps.instrumentApproach.manualEntryRequired ? " (manual entry" + (nightOps.instrumentApproach.overridden ? ", overridden" : "") + ")" : nightOps.instrumentApproach.overridden ? " (override of auto-derived " + nightOps.instrumentApproach.autoLabel + ")" : " (auto-derived from NASR)"),
+      { color: nightOps.instrumentApproach.effective === "unknown" ? GOLD : undefined, bold: nightOps.instrumentApproach.manualEntryRequired });
+    row("ALTERNATE MINIMUMS", nightOps.alternateMinimums
+      ? nightOps.alternateMinimums.ceilingFt + "-" + nightOps.alternateMinimums.visibilityMi + " (" + nightOps.alternateMinimums.citation + ")"
+      : (nightOps.vfrOnlyFlag ? "VFR only -- no instrument alternate minimums apply" : "Cannot be determined until instrument approach availability is confirmed"),
+      { color: nightOps.alternateMinimums ? undefined : GOLD });
+    row("RUNWAY EDGE LIGHTING (FOM §6.1.6.7)", nightOps.nightCapability.edgeLightingPresent ? "Present" : "Not present / not in NASR",
+      { color: nightOps.nightCapability.edgeLightingPresent ? undefined : AMBER });
+    row("LIGHTED WIND INDICATOR (FOM §6.1.6.7)", nightOps.nightCapability.windIndicatorLighted ? "Present" : "Not present / not in NASR",
+      { color: nightOps.nightCapability.windIndicatorLighted ? undefined : AMBER });
+    row("OBSTRUCTION LIGHTING (FOM §6.1.6.7)", nightOps.nightCapability.obstructionLightingPresent ? "Present (marked/lighted obstruction on file)" : "None on file",
+      { color: nightOps.nightCapability.obstructionLightingPresent ? undefined : AMBER });
+    row("NIGHT CIRCLING", nightOps.nightCirclingNote, { color: AMBER });
+    row("REMOTE / UNMONITORED (FOM §6.1.6.7)", nightOps.remoteUnmonitored
+      ? "YES -- uncontrolled, no on-field weather reporting" + (nightOps.winterNightHardFlag ? " -- HARD FLAG: planned winter-season night operation" : "")
+      : "No -- towered or on-field weather reporting available",
+      { color: nightOps.winterNightHardFlag ? RED : nightOps.remoteUnmonitored ? AMBER : undefined, bold: nightOps.winterNightHardFlag });
+    row("WINTER NIGHT OPERATION PLANNED", nightOps.winterNightOps === "yes" ? "Yes" : nightOps.winterNightOps === "no" ? "No" : "Unknown / not specified",
+      { color: nightOps.winterNightOps === "unknown" ? GOLD : undefined });
+    return table(D, rows);
   }
 
   function fboTable(D, fbo) {

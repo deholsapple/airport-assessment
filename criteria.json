@@ -1,9 +1,21 @@
 {
   "verified": false,
   "meta": {
-    "note": "All thresholds below are null until reviewed against the AFM/ops specs and company ops manual for each aircraft. Do not use for dispatch while verified=false. Every criterion with a null threshold reads NOT EVALUATED in the generated report, regardless of what NASR data is available -- the report generator never invents a number to fill a gap here.",
+    "note": "This is a first-pass screening tool, not a performance-suitability determination. The PACCAR FOM confirms no static minimum runway length exists -- length/width/weight performance is a function of the day's weight, weather, and conditions and belongs in ForeFlight, not in a static per-airport screen. The only static, aircraft-independent-of-conditions screening fact kept here is hard-surface + weight-bearing class. wtBearingDW stays null until a real company weight-bearing minimum is reviewed in; until then it reads NOT EVALUATED, not a guess.",
     "lastReviewedBy": null,
     "lastReviewedDate": null
+  },
+  "fom": {
+    "alternateMinimums": {
+      "precisionOrApv": { "ceilingFt": 600, "visibilityMi": 2, "citation": "FOM §4.1.3.3" },
+      "nonPrecision": { "ceilingFt": 800, "visibilityMi": 2, "citation": "FOM §4.1.3.3" }
+    },
+    "citations": {
+      "araTrigger": "FOM §2.7.4",
+      "alternateMinimums": "FOM §4.1.3.3",
+      "nightCircling": "FOM §6.1.6.2",
+      "nightCapabilityAndRemoteOps": "FOM §6.1.6.7"
+    }
   },
   "aircraft": [
     {
@@ -11,81 +23,20 @@
       "name": "Falcon 50EX",
       "criteria": [
         {
-          "id": "takeoffDistance",
-          "label": "Takeoff distance",
-          "unit": "ft",
-          "compare": "min",
-          "source": "runwayEnd",
-          "threshold": null,
-          "cautionBand": null
-        },
-        {
-          "id": "landingDistance",
-          "label": "Landing distance",
-          "unit": "ft",
-          "compare": "min",
-          "source": "runwayEnd",
-          "threshold": null,
-          "cautionBand": null
-        },
-        {
-          "id": "rwyWidth",
-          "label": "Runway width",
-          "unit": "ft",
-          "compare": "min",
-          "source": "runway",
-          "threshold": null,
-          "cautionBand": null
-        },
-        {
-          "id": "wtBearingDW",
-          "label": "Weight bearing (DW)",
-          "unit": "lb",
-          "compare": "min",
-          "source": "runway",
-          "threshold": null,
-          "cautionBand": null
-        },
-        {
           "id": "surface",
-          "label": "Surface",
+          "label": "Hard surface (paved)",
           "unit": "",
           "compare": "categorical",
           "source": "runway",
-          "threshold": null,
-          "allowed": null
+          "allowed": ["ASPH", "CONC"],
+          "requiredLabel": "Hard surface (paved)"
         },
         {
-          "id": "lighting",
-          "label": "Runway lighting",
-          "unit": "",
-          "compare": "boolean",
+          "id": "wtBearingDW",
+          "label": "Weight bearing (dual wheel)",
+          "unit": "lb",
+          "compare": "min",
           "source": "runway",
-          "threshold": null
-        },
-        {
-          "id": "arffIndex",
-          "label": "ARFF index",
-          "unit": "",
-          "compare": "ordinal",
-          "source": "airport",
-          "threshold": null
-        },
-        {
-          "id": "apchMinimums",
-          "label": "Approach minimums",
-          "unit": "ft",
-          "compare": "max",
-          "source": "external",
-          "threshold": null,
-          "cautionBand": null
-        },
-        {
-          "id": "alternateDistance",
-          "label": "Alternate distance",
-          "unit": "NM",
-          "compare": "max",
-          "source": "external",
           "threshold": null,
           "cautionBand": null
         }
@@ -96,81 +47,20 @@
       "name": "Gulfstream G280",
       "criteria": [
         {
-          "id": "takeoffDistance",
-          "label": "Takeoff distance",
-          "unit": "ft",
-          "compare": "min",
-          "source": "runwayEnd",
-          "threshold": null,
-          "cautionBand": null
-        },
-        {
-          "id": "landingDistance",
-          "label": "Landing distance",
-          "unit": "ft",
-          "compare": "min",
-          "source": "runwayEnd",
-          "threshold": null,
-          "cautionBand": null
-        },
-        {
-          "id": "rwyWidth",
-          "label": "Runway width",
-          "unit": "ft",
-          "compare": "min",
-          "source": "runway",
-          "threshold": null,
-          "cautionBand": null
-        },
-        {
-          "id": "wtBearingDW",
-          "label": "Weight bearing (DW)",
-          "unit": "lb",
-          "compare": "min",
-          "source": "runway",
-          "threshold": null,
-          "cautionBand": null
-        },
-        {
           "id": "surface",
-          "label": "Surface",
+          "label": "Hard surface (paved)",
           "unit": "",
           "compare": "categorical",
           "source": "runway",
-          "threshold": null,
-          "allowed": null
+          "allowed": ["ASPH", "CONC"],
+          "requiredLabel": "Hard surface (paved)"
         },
         {
-          "id": "lighting",
-          "label": "Runway lighting",
-          "unit": "",
-          "compare": "boolean",
+          "id": "wtBearingDW",
+          "label": "Weight bearing (dual wheel)",
+          "unit": "lb",
+          "compare": "min",
           "source": "runway",
-          "threshold": null
-        },
-        {
-          "id": "arffIndex",
-          "label": "ARFF index",
-          "unit": "",
-          "compare": "ordinal",
-          "source": "airport",
-          "threshold": null
-        },
-        {
-          "id": "apchMinimums",
-          "label": "Approach minimums",
-          "unit": "ft",
-          "compare": "max",
-          "source": "external",
-          "threshold": null,
-          "cautionBand": null
-        },
-        {
-          "id": "alternateDistance",
-          "label": "Alternate distance",
-          "unit": "NM",
-          "compare": "max",
-          "source": "external",
           "threshold": null,
           "cautionBand": null
         }

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; connect-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; object-src 'none'; form-action 'none';">
-<title>Airport Suitability Report Generator</title>
+<title>Airport Screening Report Generator</title>
 <script src="vendor/docx.iife.js"></script>
 <script src="airport-data.js"></script>
 <script src="fbo-data.js"></script>
@@ -26,6 +26,8 @@
     --fail:#C00000;
     --fail-bg:#fdecec;
     --fail-border:#e0a3a3;
+    --info-bg:#dce6f1;
+    --info-border:#9fb8d9;
     --gray-50:#f7f8fa;
     --gray-100:#eef1f4;
     --gray-200:#dde2e8;
@@ -68,6 +70,11 @@
     border-radius:var(--radius);padding:12px 16px;margin:18px 0;font-size:.85rem;
   }
   .disclaimer strong{color:var(--amber);}
+  .banner-info{
+    background:var(--info-bg);border:1px solid var(--info-border);color:var(--navy);
+    border-radius:var(--radius);padding:12px 16px;margin:18px 0;font-size:.88rem;font-weight:600;
+  }
+  .banner-info span{display:block;font-weight:400;color:var(--gray-800);margin-top:4px;font-size:.82rem;}
   .banner-unverified{
     background:#fdecec;border:1px solid var(--fail-border);color:var(--fail);
     border-radius:var(--radius);padding:12px 16px;margin:18px 0;font-size:.88rem;font-weight:600;
@@ -101,6 +108,7 @@
     font-size:.92rem;font-family:inherit;background:#fff;color:var(--gray-800);
   }
   input:focus,select:focus{outline:2px solid var(--navy);outline-offset:1px;border-color:var(--navy);}
+  select.manual-entry-flag{border-color:var(--gold);background:var(--gold-bg);}
   .field{margin-bottom:0;}
   .row-inline{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;}
   button{
@@ -127,9 +135,9 @@
   .pill-CAUTION{background:var(--amber-bg);color:var(--amber);}
   .pill-UNKNOWN,.pill-CONFIRM,.pill-NOTAVAILABLE{background:var(--gold-bg);color:var(--gold);}
   .pill-NOTEVALUATED{background:var(--gray-100);color:var(--gray-600);}
-  .pill-SUITABLE{background:var(--ok-bg);color:var(--ok);}
-  .pill-SUITABLEWITHLIMITATIONS{background:var(--amber-bg);color:var(--amber);}
-  .pill-NOTSUITABLE{background:var(--fail-bg);color:var(--fail);}
+  .pill-CLEARDISQUALIFIER{background:var(--fail-bg);color:var(--fail);}
+  .pill-REVIEWWITHCHIEFPILOT{background:var(--amber-bg);color:var(--amber);}
+  .pill-SCREENSOKPERFORMANCECALCREQUIRED{background:var(--ok-bg);color:var(--ok);}
   .fbo-banner{background:var(--gold-bg);border:1px solid var(--gold-border);color:var(--gold);border-radius:6px;padding:10px 12px;font-size:.82rem;margin-bottom:10px;}
   .fbo-row{display:grid;grid-template-columns:1.4fr 1fr 1fr 1.6fr auto;gap:8px;margin-bottom:8px;align-items:center;}
   @media (max-width:820px){ .fbo-row{grid-template-columns:1fr;} }
@@ -157,8 +165,8 @@
 <header class="app-header">
   <div class="header-row">
     <div>
-      <h1>Airport Suitability Report Generator</h1>
-      <div class="subtitle">Falcon 50EX / Gulfstream G280 &middot; NASR + criteria.json &middot; Sections 1&ndash;9</div>
+      <h1>Airport Screening Report Generator</h1>
+      <div class="subtitle">Falcon 50EX / Gulfstream G280 &middot; First-pass screening, not a performance determination &middot; Sections 1&ndash;10</div>
     </div>
     <span class="badge">Client-side &middot; no server</span>
   </div>
@@ -167,7 +175,7 @@
 <main>
 
   <div class="disclaimer">
-    <strong>Data currency notice:</strong> Airport facts (runways, frequencies, tower, remarks, attendance) come from the
+    <strong>Data currency notice:</strong> Airport facts (runways, frequencies, tower, remarks, attendance, lighting) come from the
     embedded FAA 28-Day NASR dataset (<span id="nasrCycleNote">dataset not loaded</span>). Anything NASR doesn't carry
     prints as <strong>NOT AVAILABLE</strong> and is listed in &sect;8, Items Requiring Verification &mdash; it is never
     guessed. FBO data is separately researched (not from NASR) and any unconfirmed FBO fact prints as
@@ -175,10 +183,18 @@
     before dispatch.
   </div>
 
+  <div class="banner-info">
+    FIRST-PASS SCREENING ONLY
+    <span>This tool screens an airport against the PACCAR FOM's own gates so a pilot can self-screen when the DOA is unreachable.
+    It never replaces PIC judgment, never tells you to "check with the DOA," and does not perform (or impersonate) a ForeFlight
+    performance calculation. A performance calculation is still required before dispatch. Marginal or flagged items are worked out
+    with the Chief Pilot &mdash; that is the FOM's own process (&sect;2.7.4), not a tool limitation.</span>
+  </div>
+
   <div class="banner-unverified" id="criteriaBanner" style="display:none;">
     CRITERIA NOT VERIFIED
-    <span>One or more thresholds in criteria.json have not been reviewed against the AFM / ops specs. Every criterion
-    depending on an unset threshold reads NOT EVALUATED in the generated report. Do not use for dispatch.</span>
+    <span>The weight-bearing threshold in criteria.json has not been reviewed against a real company minimum. It reads
+    NOT EVALUATED until someone reviews a real number in.</span>
   </div>
 
   <!-- Lookup -->
@@ -194,6 +210,45 @@
         <button class="btn-secondary" id="generateBtn" type="button" disabled>Download .docx</button>
       </div>
       <div id="fetchStatus" class="status-msg status-wait" role="status">Enter a 4-letter ICAO identifier and click Preview.</div>
+    </div>
+  </section>
+
+  <!-- FOM screening questions -->
+  <section class="card">
+    <div class="card-head"><h2><span class="section-num">&#10067;</span>Screening Questions</h2></div>
+    <div class="card-body">
+      <div class="card-sub">These three answers come from the crew, not NASR. Each defaults to the safest/most conservative state and is logged as a verification item until answered.</div>
+      <div class="grid cols-3">
+        <div class="field">
+          <label for="recentOperation">Has either crew member operated here in the last 2 years?</label>
+          <select id="recentOperation">
+            <option value="unknown" selected>Unknown / not asked</option>
+            <option value="yes">Yes</option>
+            <option value="no">No</option>
+          </select>
+          <div class="small-note">If yes, an ARA may already exist in Comply365 (FOM &sect;2.7.4).</div>
+        </div>
+        <div class="field">
+          <label for="approachOverride">Published instrument approach available?</label>
+          <select id="approachOverride">
+            <option value="" selected>Auto-derive from NASR (defaults to Unknown if not derivable)</option>
+            <option value="none">None (VFR only)</option>
+            <option value="nonPrecision">Non-precision only</option>
+            <option value="precisionOrApv">Precision or APV</option>
+            <option value="unknown">Unknown — verify from chart</option>
+          </select>
+          <div class="small-note" id="approachAutoReadout">Look up an airport to see the auto-derived value.</div>
+        </div>
+        <div class="field">
+          <label for="winterNightOps">Planned as a winter-season night operation?</label>
+          <select id="winterNightOps">
+            <option value="unknown" selected>Unknown / not specified</option>
+            <option value="yes">Yes</option>
+            <option value="no">No</option>
+          </select>
+          <div class="small-note">Combined with an uncontrolled field + no on-field weather, this is a hard disqualifier (FOM &sect;6.1.6.7).</div>
+        </div>
+      </div>
     </div>
   </section>
 
@@ -217,8 +272,8 @@
     <div class="card-head"><h2><span class="section-num">&#9998;</span>PIC Comments &amp; Sign-off</h2></div>
     <div class="card-body">
       <div class="field" style="margin-bottom:12px;">
-        <label for="picComments">PIC Narrative (printed into &sect;8 of the report)</label>
-        <textarea id="picComments" placeholder="Free-text notes for this specific assessment..."></textarea>
+        <label for="picComments">PIC Narrative (printed into &sect;9 of the report)</label>
+        <textarea id="picComments" placeholder="Free-text notes for this specific screening..."></textarea>
       </div>
       <div class="grid cols-3">
         <div class="field"><label for="picName">Pilot in Command (name)</label><input type="text" id="picName" placeholder="Name"></div>
@@ -234,8 +289,9 @@
     <section class="card">
       <div class="card-head"><h2><span class="section-num">1</span>Determination</h2></div>
       <div class="card-body">
-        <div class="matrix-wrap"><table id="tblDetermination"><thead><tr><th>Aircraft</th><th>Determination</th><th>Qualifying Runway Ends</th></tr></thead><tbody></tbody></table></div>
-        <div id="determinationNotes" class="small-note"></div>
+        <div class="card-sub">Three screening buckets, never a suitability determination. Marginal items route to pilot + Chief Pilot (FOM &sect;2.7.4).</div>
+        <div class="matrix-wrap"><table id="tblDetermination"><thead><tr><th>Aircraft</th><th>Screening Result</th></tr></thead><tbody></tbody></table></div>
+        <ul id="determinationReasons" style="margin:8px 0 0;padding-left:18px;font-size:.82rem;color:var(--gray-600);"></ul>
       </div>
     </section>
 
@@ -260,15 +316,20 @@
     <section class="card">
       <div class="card-head"><h2><span class="section-num">4</span>Runway Evaluation</h2></div>
       <div class="card-body">
-        <div class="card-sub">Evaluated per runway end against NASR declared distances (TORA/TODA/ASDA/LDA), not physical length. A blank declared distance means NASR hasn't published one for that end -- it is never treated as equal to physical length.</div>
+        <div class="card-sub">No static minimum runway length applies (PACCAR FOM). Declared distances below are a reference fact for the ForeFlight performance calculation, not a pass/fail gate. The only static screen kept here is hard surface + weight-bearing class.</div>
         <div id="runwayGroups"></div>
-        <div id="criteriaTables"></div>
+        <div id="runwayScreenTables"></div>
         <div class="small-note">NOT EVALUATED = threshold not yet set in criteria.json. UNKNOWN = threshold set, but NASR has no actual value to compare.</div>
       </div>
     </section>
 
     <section class="card">
-      <div class="card-head"><h2><span class="section-num">5</span>Services and FBO</h2></div>
+      <div class="card-head"><h2><span class="section-num">5</span>Night Operations &amp; Recency</h2></div>
+      <div class="card-body" id="nightOpsBody"></div>
+    </section>
+
+    <section class="card">
+      <div class="card-head"><h2><span class="section-num">6</span>Services and FBO</h2></div>
       <div class="card-body">
         <div class="fbo-banner">NOT FROM NASR &mdash; CONFIRM BY PHONE. FBO services, hours, and fuel change without notice.</div>
         <div id="fboLookupPreview" class="small-note"></div>
@@ -277,14 +338,14 @@
     </section>
 
     <section class="card">
-      <div class="card-head"><h2><span class="section-num">6</span>Disqualifying Findings</h2></div>
+      <div class="card-head"><h2><span class="section-num">7</span>Disqualifying Findings</h2></div>
       <div class="card-body"><ul id="findingsList" style="margin:0;padding-left:18px;font-size:.85rem;"></ul></div>
     </section>
 
     <section class="card">
-      <div class="card-head"><h2><span class="section-num">7</span>Items Requiring Verification</h2></div>
+      <div class="card-head"><h2><span class="section-num">8</span>Items Requiring Verification</h2></div>
       <div class="card-body">
-        <div class="card-sub">Auto-generated. Every data point the source could not supply becomes an action item.</div>
+        <div class="card-sub">Auto-generated. Every data point the source could not supply, and every marginal screening condition, becomes an action item.</div>
         <div class="matrix-wrap"><table id="tblVerification"><thead><tr><th style="width:6%">#</th><th>Item</th><th>Action</th></tr></thead><tbody></tbody></table></div>
       </div>
     </section>
@@ -335,15 +396,18 @@ function renderPreview(report){
   // Section 1: Determination
   var detBody = document.querySelector("#tblDetermination tbody");
   detBody.innerHTML = "";
-  var notes = [];
+  var reasonsList = $("determinationReasons");
+  reasonsList.innerHTML = "";
   report.determinations.forEach(function(a){
     var tr = document.createElement("tr");
-    var qual = a.qualifyingEnds.length ? a.qualifyingEnds.join(", ") + (a.qualifyingEnds.length === 1 ? " only" : "") : "None";
-    tr.innerHTML = "<td>" + a.aircraftName + "</td><td>" + pill(a.determination) + "</td><td>" + qual + "</td>";
+    tr.innerHTML = "<td>" + a.aircraftName + "</td><td>" + pill(a.bucket) + "</td>";
     detBody.appendChild(tr);
-    if(a.note) notes.push(a.note);
+    a.reasons.forEach(function(r){
+      var li = document.createElement("li");
+      li.textContent = a.aircraftName + ": " + r;
+      reasonsList.appendChild(li);
+    });
   });
-  $("determinationNotes").textContent = notes.join(" ");
 
   // Section 2: Facility
   var f = report.facility;
@@ -376,7 +440,7 @@ function renderPreview(report){
     commsBody.appendChild(tr);
   });
 
-  // Section 4: Runway evaluation (merged physical/declared-distance facts + criteria)
+  // Section 4: Runway evaluation -- declared distances (facts) + hard-surface/weight screen
   var groupsRoot = $("runwayGroups");
   groupsRoot.innerHTML = "";
   var byRunway = {}, runwayOrder = [];
@@ -386,9 +450,10 @@ function renderPreview(report){
   });
   runwayOrder.forEach(function(rwId){
     var ends = byRunway[rwId];
+    var rwFact = report.runwayFacts.find(function(r){ return r.id === rwId; }) || {};
     var h3 = document.createElement("h3");
     h3.style.cssText = "font-size:.85rem;color:var(--navy);margin:14px 0 8px;";
-    h3.textContent = "RWY " + rwId + " — " + (ends[0].width ? ends[0].width + " ft wide" : "width NOT AVAILABLE") + ", " + ends[0].surface + ", " + ends[0].wtBrg;
+    h3.textContent = "RWY " + rwId + " — " + (rwFact.width ? rwFact.width + " ft wide" : "width NOT AVAILABLE") + ", " + rwFact.surface + ", " + rwFact.wtBrg;
     groupsRoot.appendChild(h3);
     var table = document.createElement("table");
     function distCell(v){ return v ? Number(v).toLocaleString() + " ft" : "<span class='pill pill-NOTAVAILABLE'>NOT AVAILABLE</span>"; }
@@ -400,32 +465,47 @@ function renderPreview(report){
     groupsRoot.appendChild(table);
   });
 
-  var criteriaRoot = $("criteriaTables");
-  criteriaRoot.innerHTML = "";
-  var any = false;
+  var screenRoot = $("runwayScreenTables");
+  screenRoot.innerHTML = "";
   report.determinations.forEach(function(a){
-    a.criteriaTables.forEach(function(t){
-      any = true;
-      var h3 = document.createElement("h3");
-      h3.style.cssText = "font-size:.85rem;color:var(--navy);margin:16px 0 8px;";
-      h3.textContent = a.aircraftName + " / " + t.endId + " (RWY " + t.runwayId + ")";
-      criteriaRoot.appendChild(h3);
-      var table = document.createElement("table");
-      table.innerHTML = "<thead><tr><th>Criterion</th><th>Actual</th><th>Required</th><th>Margin</th><th>Result</th></tr></thead><tbody>" +
-        t.rows.map(function(r){
-          return "<tr><td>" + r.label + "</td><td>" + r.actualDisplay + "</td><td>" + r.requiredDisplay + "</td><td>" + r.marginDisplay + "</td><td>" + pill(r.result) + "</td></tr>";
-        }).join("") + "</tbody>";
-      criteriaRoot.appendChild(table);
-    });
+    var h3 = document.createElement("h3");
+    h3.style.cssText = "font-size:.85rem;color:var(--navy);margin:16px 0 8px;";
+    h3.textContent = a.aircraftName + " — hard surface / weight-bearing screen";
+    screenRoot.appendChild(h3);
+    var table = document.createElement("table");
+    table.innerHTML = "<thead><tr><th>Runway</th><th>Hard Surface</th><th>Weight Bearing (DW)</th><th>Verdict</th></tr></thead><tbody>" +
+      a.runwayScreens.map(function(rs){
+        var s = rs.rows.find(function(r){ return r.id === "surface"; });
+        var w = rs.rows.find(function(r){ return r.id === "wtBearingDW"; });
+        return "<tr><td>" + rs.runwayId + "</td><td>" + s.actualDisplay + " " + pill(s.result) + "</td><td>" + w.actualDisplay + " " + pill(w.result) + "</td><td>" + pill(rs.verdict) + "</td></tr>";
+      }).join("") + "</tbody>";
+    screenRoot.appendChild(table);
   });
-  if(!any){
-    var p = document.createElement("p");
-    p.className = "small-note";
-    p.textContent = "No runway end currently qualifies for a detailed criteria breakdown for any evaluated aircraft.";
-    criteriaRoot.appendChild(p);
-  }
 
-  // Section 5: FBO
+  // Section 5: Night Operations & Recency
+  var n = report.nightOps;
+  var nb = $("nightOpsBody");
+  function nrow(label, value, gap){
+    return "<div class='field'><label>" + label + "</label><div style='padding:9px 10px;border:1px solid var(--gray-200);border-radius:6px;background:#fff;" +
+      (gap ? "color:var(--gold);font-weight:600;" : "") + "'>" + value + "</div></div>";
+  }
+  var altMinText = n.alternateMinimums
+    ? n.alternateMinimums.ceilingFt + "-" + n.alternateMinimums.visibilityMi + " (" + n.alternateMinimums.citation + ")"
+    : (n.vfrOnlyFlag ? "VFR only — no instrument alternate minimums apply" : "Cannot be determined until instrument approach is confirmed");
+  nb.innerHTML =
+    "<div class='grid cols-3'>" +
+    nrow("2-Year Recency", n.recency.note, n.recency.answer === "unknown") +
+    nrow("Instrument Approach", n.instrumentApproach.effectiveLabel + (n.instrumentApproach.manualEntryRequired ? " (manual entry" + (n.instrumentApproach.overridden ? ", overridden" : "") + ")" : n.instrumentApproach.overridden ? " (override)" : " (auto-derived)"), n.instrumentApproach.effective === "unknown") +
+    nrow("Alternate Minimums (FOM §4.1.3.3)", altMinText, !n.alternateMinimums) +
+    nrow("Runway Edge Lighting (FOM §6.1.6.7)", n.nightCapability.edgeLightingPresent ? "Present" : "Not present / not in NASR", !n.nightCapability.edgeLightingPresent) +
+    nrow("Lighted Wind Indicator (FOM §6.1.6.7)", n.nightCapability.windIndicatorLighted ? "Present" : "Not present / not in NASR", !n.nightCapability.windIndicatorLighted) +
+    nrow("Obstruction Lighting (FOM §6.1.6.7)", n.nightCapability.obstructionLightingPresent ? "Present" : "None on file", !n.nightCapability.obstructionLightingPresent) +
+    nrow("Night Circling", n.nightCirclingNote, true) +
+    nrow("Remote / Unmonitored (FOM §6.1.6.7)", (n.remoteUnmonitored ? "YES — uncontrolled, no on-field weather reporting" : "No") + (n.winterNightHardFlag ? " — HARD FLAG: winter-season night operation" : ""), n.remoteUnmonitored) +
+    nrow("Winter Night Operation Planned", n.winterNightOps === "yes" ? "Yes" : n.winterNightOps === "no" ? "No" : "Unknown / not specified", n.winterNightOps === "unknown") +
+    "</div>";
+
+  // Section 6: FBO
   $("fboLookupPreview").innerHTML = "Full listing: <a href='" + report.fboLookupUrl + "' target='_blank' rel='noopener noreferrer'>" + report.fboLookupUrl + " &#8599;</a>";
   var fboBody = document.querySelector("#tblFbo tbody");
   fboBody.innerHTML = "";
@@ -440,7 +520,7 @@ function renderPreview(report){
   }
   function pillOrText(v){ return v === "CONFIRM" ? pill("CONFIRM") : v; }
 
-  // Section 6: Disqualifying findings
+  // Section 7: Disqualifying findings
   var findingsList = $("findingsList");
   findingsList.innerHTML = "";
   if(report.disqualifyingFindings.length === 0){
@@ -449,7 +529,7 @@ function renderPreview(report){
     report.disqualifyingFindings.forEach(function(f){ var li = document.createElement("li"); li.textContent = f; findingsList.appendChild(li); });
   }
 
-  // Section 7: Verification items
+  // Section 8: Verification items
   var verifBody = document.querySelector("#tblVerification tbody");
   verifBody.innerHTML = "";
   if(report.verificationItems.length === 0){
@@ -462,12 +542,20 @@ function renderPreview(report){
     });
   }
 
+  // Flag the instrument-approach dropdown visually when it resolved to Unknown.
+  var approachSelect = $("approachOverride");
+  if(n.instrumentApproach.effective === "unknown") approachSelect.classList.add("manual-entry-flag");
+  else approachSelect.classList.remove("manual-entry-flag");
+  $("approachAutoReadout").textContent = n.instrumentApproach.auto
+    ? "Auto-derived from NASR: " + n.instrumentApproach.autoLabel + ". Override above if you have better information."
+    : "Could not be auto-derived from NASR (approaches are a separate FAA dataset) — defaults to Unknown. Verify from chart and select above.";
+
   $("previewRoot").classList.remove("preview-hidden");
 }
 
 /* -----------------------------------------------------------------------
-   FBO entry (Fix 4) -- the one section with no authoritative feed, so it's
-   plain editable rows. Pre-fillable from fbo-data.js if that ICAO has been
+   FBO entry -- the one section with no authoritative feed, so it's plain
+   editable rows. Pre-fillable from fbo-data.js if that ICAO has been
    researched before; always editable regardless.
 ----------------------------------------------------------------------- */
 function fboRowTemplate(values){
@@ -535,6 +623,9 @@ function currentExtras(){
     picComments: $("picComments").value.trim(),
     picName: $("picName").value.trim(),
     chiefPilotName: $("chiefPilotName").value.trim(),
+    recentOperation: $("recentOperation").value,
+    instrumentApproachOverride: $("approachOverride").value,
+    winterNightOps: $("winterNightOps").value,
   };
 }
 
@@ -566,8 +657,8 @@ function doGenerate(){
   if(!currentReport){ setStatus("Click Preview first.", "err"); return; }
   if(!window.docx){ setStatus("docx library failed to load (vendor/docx.iife.js missing).", "err"); return; }
   setStatus("Generating .docx...", "wait");
-  // Rebuild with the latest FBO/PIC/sign-off entries in case they were
-  // edited after the last Preview click.
+  // Rebuild with the latest FBO/PIC/screening-question entries in case
+  // they were edited after the last Preview click.
   currentReport = window.ReportData.buildReport(currentReport.icao, window.NASR_AIRPORT_DATA, criteriaData, window.FBO_DATA || {}, currentExtras());
   var doc = window.DocxBuilder.build(currentReport, window.docx);
   window.docx.Packer.toBlob(doc).then(function(blob){
