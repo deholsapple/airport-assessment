@@ -1,9 +1,9 @@
 {
-  "verified": false,
+  "verified": true,
   "meta": {
-    "note": "This is a first-pass screening tool, not a performance-suitability determination. The PACCAR FOM confirms no static minimum runway length exists -- length/width/weight performance is a function of the day's weight, weather, and conditions and belongs in ForeFlight, not in a static per-airport screen. The only static, aircraft-independent-of-conditions screening fact kept here is hard-surface + weight-bearing class. wtBearingDW stays null until a real company weight-bearing minimum is reviewed in; until then it reads NOT EVALUATED, not a guess.",
-    "lastReviewedBy": null,
-    "lastReviewedDate": null
+    "note": "This is a first-pass screening tool, not a performance-suitability determination. The PACCAR FOM confirms no static minimum runway length exists -- length/width/weight performance is a function of the day's weight, weather, and conditions and belongs in ForeFlight, not in a static per-airport screen. The only static, condition-independent screening fact kept here is hard-surface + weight-bearing class. Both airframes are dual-wheel gear, so the gate reads NASR's DW (dual-wheel) weight-bearing column only -- never SW/DTW/DDTW -- and compares it against the airframe's lightest landing weight as the floor a runway must clear.",
+    "lastReviewedBy": "D. Holsapple",
+    "lastReviewedDate": "2026-07-15"
   },
   "fom": {
     "alternateMinimums": {
@@ -21,6 +21,8 @@
     {
       "id": "falcon50ex",
       "name": "Falcon 50EX",
+      "gear_type": "DW",
+      "lightest_landing_weight_lb": 24286,
       "criteria": [
         {
           "id": "surface",
@@ -33,11 +35,11 @@
         },
         {
           "id": "wtBearingDW",
-          "label": "Weight bearing (dual wheel)",
+          "label": "Weight bearing (dual wheel) vs. lightest landing weight",
           "unit": "lb",
           "compare": "min",
           "source": "runway",
-          "threshold": null,
+          "threshold": 24286,
           "cautionBand": null
         }
       ]
@@ -45,6 +47,8 @@
     {
       "id": "g280",
       "name": "Gulfstream G280",
+      "gear_type": "DW",
+      "lightest_landing_weight_lb": 26689,
       "criteria": [
         {
           "id": "surface",
@@ -57,11 +61,11 @@
         },
         {
           "id": "wtBearingDW",
-          "label": "Weight bearing (dual wheel)",
+          "label": "Weight bearing (dual wheel) vs. lightest landing weight",
           "unit": "lb",
           "compare": "min",
           "source": "runway",
-          "threshold": null,
+          "threshold": 26689,
           "cautionBand": null
         }
       ]

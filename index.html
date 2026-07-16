@@ -329,21 +329,12 @@
     </section>
 
     <section class="card">
-      <div class="card-head"><h2><span class="section-num">6</span>Services and FBO</h2></div>
-      <div class="card-body">
-        <div class="fbo-banner">NOT FROM NASR &mdash; CONFIRM BY PHONE. FBO services, hours, and fuel change without notice.</div>
-        <div id="fboLookupPreview" class="small-note"></div>
-        <div class="matrix-wrap"><table id="tblFbo"><thead><tr><th>FBO</th><th>Phone</th><th>Fuel</th><th>Services</th></tr></thead><tbody></tbody></table></div>
-      </div>
-    </section>
-
-    <section class="card">
-      <div class="card-head"><h2><span class="section-num">7</span>Disqualifying Findings</h2></div>
+      <div class="card-head"><h2><span class="section-num">6</span>Disqualifying Findings</h2></div>
       <div class="card-body"><ul id="findingsList" style="margin:0;padding-left:18px;font-size:.85rem;"></ul></div>
     </section>
 
     <section class="card">
-      <div class="card-head"><h2><span class="section-num">8</span>Items Requiring Verification</h2></div>
+      <div class="card-head"><h2><span class="section-num">7</span>Items Requiring Verification</h2></div>
       <div class="card-body">
         <div class="card-sub">Auto-generated. Every data point the source could not supply, and every marginal screening condition, becomes an action item.</div>
         <div class="matrix-wrap"><table id="tblVerification"><thead><tr><th style="width:6%">#</th><th>Item</th><th>Action</th></tr></thead><tbody></tbody></table></div>
@@ -453,7 +444,8 @@ function renderPreview(report){
     var rwFact = report.runwayFacts.find(function(r){ return r.id === rwId; }) || {};
     var h3 = document.createElement("h3");
     h3.style.cssText = "font-size:.85rem;color:var(--navy);margin:14px 0 8px;";
-    h3.textContent = "RWY " + rwId + " — " + (rwFact.width ? rwFact.width + " ft wide" : "width NOT AVAILABLE") + ", " + rwFact.surface + ", " + rwFact.wtBrg;
+    h3.textContent = "RWY " + rwId + " — " + (rwFact.length ? rwFact.length.toLocaleString() + " ft long" : "length NOT AVAILABLE") + ", " +
+      (rwFact.width ? rwFact.width + " ft wide" : "width NOT AVAILABLE") + ", " + rwFact.surface + ", " + rwFact.wtBrg;
     groupsRoot.appendChild(h3);
     var table = document.createElement("table");
     function distCell(v){ return v ? Number(v).toLocaleString() + " ft" : "<span class='pill pill-NOTAVAILABLE'>NOT AVAILABLE</span>"; }
@@ -473,11 +465,12 @@ function renderPreview(report){
     h3.textContent = a.aircraftName + " — hard surface / weight-bearing screen";
     screenRoot.appendChild(h3);
     var table = document.createElement("table");
-    table.innerHTML = "<thead><tr><th>Runway</th><th>Hard Surface</th><th>Weight Bearing (DW)</th><th>Verdict</th></tr></thead><tbody>" +
+    table.innerHTML = "<thead><tr><th>Runway</th><th>Hard Surface</th><th>Weight Bearing (DW) Actual</th><th>Lightest Landing Weight Floor</th><th>Verdict</th></tr></thead><tbody>" +
       a.runwayScreens.map(function(rs){
         var s = rs.rows.find(function(r){ return r.id === "surface"; });
         var w = rs.rows.find(function(r){ return r.id === "wtBearingDW"; });
-        return "<tr><td>" + rs.runwayId + "</td><td>" + s.actualDisplay + " " + pill(s.result) + "</td><td>" + w.actualDisplay + " " + pill(w.result) + "</td><td>" + pill(rs.verdict) + "</td></tr>";
+        return "<tr><td>" + rs.runwayId + "</td><td>" + s.actualDisplay + " " + pill(s.result) + "</td><td>" + (w.actualDisplay === "NOT AVAILABLE" ? pill("NOTAVAILABLE") : w.actualDisplay) +
+          "</td><td>" + w.requiredDisplay + (w.marginDisplay !== "—" ? " (" + w.marginDisplay + ")" : "") + "</td><td>" + pill(rs.verdict) + "</td></tr>";
       }).join("") + "</tbody>";
     screenRoot.appendChild(table);
   });
@@ -505,22 +498,7 @@ function renderPreview(report){
     nrow("Winter Night Operation Planned", n.winterNightOps === "yes" ? "Yes" : n.winterNightOps === "no" ? "No" : "Unknown / not specified", n.winterNightOps === "unknown") +
     "</div>";
 
-  // Section 6: FBO
-  $("fboLookupPreview").innerHTML = "Full listing: <a href='" + report.fboLookupUrl + "' target='_blank' rel='noopener noreferrer'>" + report.fboLookupUrl + " &#8599;</a>";
-  var fboBody = document.querySelector("#tblFbo tbody");
-  fboBody.innerHTML = "";
-  if(report.fbo.length === 0){
-    fboBody.innerHTML = '<tr><td colspan="4" class="small-note">No FBO records entered for this airport.</td></tr>';
-  } else {
-    report.fbo.forEach(function(f){
-      var tr = document.createElement("tr");
-      tr.innerHTML = "<td>" + f.name + "</td><td>" + pillOrText(f.phone) + "</td><td>" + pillOrText(f.fuel) + "</td><td>" + pillOrText(f.services) + "</td>";
-      fboBody.appendChild(tr);
-    });
-  }
-  function pillOrText(v){ return v === "CONFIRM" ? pill("CONFIRM") : v; }
-
-  // Section 7: Disqualifying findings
+  // Section 6: Disqualifying findings
   var findingsList = $("findingsList");
   findingsList.innerHTML = "";
   if(report.disqualifyingFindings.length === 0){
@@ -529,7 +507,7 @@ function renderPreview(report){
     report.disqualifyingFindings.forEach(function(f){ var li = document.createElement("li"); li.textContent = f; findingsList.appendChild(li); });
   }
 
-  // Section 8: Verification items
+  // Section 7: Verification items
   var verifBody = document.querySelector("#tblVerification tbody");
   verifBody.innerHTML = "";
   if(report.verificationItems.length === 0){

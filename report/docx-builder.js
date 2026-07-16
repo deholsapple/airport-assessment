@@ -90,7 +90,9 @@
       "weight, weather, and conditions and belongs in a ForeFlight performance calculation, not a static screen. Declared distances below are a " +
       "reference fact for that calculation, not a pass/fail gate. The only static screen kept here is hard surface + weight-bearing class."));
     groupEndsByRunway(report.endFacts, report.runwayFacts).forEach(function (group) {
-      children.push(subHeading(D, "RWY " + group.runwayId + " — " + (group.width ? group.width + " ft wide" : "width NOT AVAILABLE") + ", " + group.surface + ", " + group.wtBrg));
+      children.push(subHeading(D, "RWY " + group.runwayId + " — " +
+        (group.length ? group.length.toLocaleString("en-US") + " ft long" : "length NOT AVAILABLE") + ", " +
+        (group.width ? group.width + " ft wide" : "width NOT AVAILABLE") + ", " + group.surface + ", " + group.wtBrg));
       children.push(declaredDistanceTable(D, group.ends));
       children.push(spacer(D, 60));
     });
@@ -106,41 +108,24 @@
     children.push(nightOpsSection(D, report.nightOps));
     children.push(spacer(D));
 
-    children.push(sectionHeading(D, "6.", "SERVICES AND FBO"));
-    children.push(banner(D, "NOT FROM NASR — CONFIRM BY PHONE",
-      "FBO services, hours, and fuel change without notice. These entries are pilot-entered and/or previously researched -- a starting point and a phone number, not a verified fact.",
-      GOLD, BANNER_BG));
-    children.push(new D.Paragraph({
-      spacing: { after: 100 },
-      children: [
-        run(D, "Full FBO / services listing for " + report.icao + ": ", { size: 18 }),
-        new D.ExternalHyperlink({
-          link: report.fboLookupUrl,
-          children: [run(D, report.fboLookupUrl, { size: 18, color: NAVY, underline: { type: D.UnderlineType.SINGLE } })],
-        }),
-      ],
-    }));
-    children.push(fboTable(D, report.fbo));
-    children.push(spacer(D));
-
-    children.push(sectionHeading(D, "7.", "DISQUALIFYING FINDINGS"));
+    children.push(sectionHeading(D, "6.", "DISQUALIFYING FINDINGS"));
     children.push(report.disqualifyingFindings.length
       ? findingsTable(D, report.disqualifyingFindings)
       : italicNote(D, "None identified from evaluated criteria."));
     children.push(spacer(D));
 
-    children.push(sectionHeading(D, "8.", "ITEMS REQUIRING VERIFICATION"));
+    children.push(sectionHeading(D, "7.", "ITEMS REQUIRING VERIFICATION"));
     children.push(italicNote(D, "Auto-generated. Every data point the source could not supply, and every marginal screening condition, becomes an action item."));
     children.push(report.verificationItems.length
       ? verificationTable(D, report.verificationItems)
       : italicNote(D, "None — every field used in this report had a NASR-sourced or confirmed value."));
     children.push(spacer(D));
 
-    children.push(sectionHeading(D, "9.", "PIC NARRATIVE"));
+    children.push(sectionHeading(D, "8.", "PIC NARRATIVE"));
     children.push(narrativeBox(D, report.picComments));
     children.push(spacer(D));
 
-    children.push(sectionHeading(D, "10.", "SIGN-OFF"));
+    children.push(sectionHeading(D, "9.", "SIGN-OFF"));
     children.push(signOffTable(D, report.picName, report.chiefPilotName));
     children.push(new D.Paragraph({
       children: [new D.TextRun({
@@ -357,7 +342,7 @@
     });
     order.forEach(function (id) {
       var rwFact = runwayFacts.filter(function (r) { return r.id === id; })[0];
-      if (rwFact) { byId[id].width = rwFact.width; byId[id].surface = rwFact.surface; byId[id].wtBrg = rwFact.wtBrg; }
+      if (rwFact) { byId[id].length = rwFact.length; byId[id].width = rwFact.width; byId[id].surface = rwFact.surface; byId[id].wtBrg = rwFact.wtBrg; }
     });
     return order.map(function (id) { return byId[id]; });
   }
@@ -381,7 +366,7 @@
 
   function runwayScreenTable(D, runwayScreens) {
     var headerRow = new D.TableRow({
-      children: [headerCell(D, "RUNWAY", 16), headerCell(D, "HARD SURFACE", 28), headerCell(D, "WEIGHT BEARING (DW)", 28), headerCell(D, "VERDICT", 28)],
+      children: [headerCell(D, "RUNWAY", 14), headerCell(D, "HARD SURFACE", 20), headerCell(D, "WEIGHT BEARING (DW) ACTUAL", 22), headerCell(D, "LIGHTEST LANDING WEIGHT FLOOR", 22), headerCell(D, "VERDICT", 22)],
     });
     var rows = runwayScreens.map(function (rs) {
       var s = rs.rows.filter(function (r) { return r.id === "surface"; })[0];
@@ -390,7 +375,8 @@
         children: [
           bodyCell(D, rs.runwayId, { bold: true }),
           bodyCell(D, s.actualDisplay + " (" + s.result + ")", { color: RESULT_COLOR[s.result] }),
-          bodyCell(D, w.actualDisplay + " (" + w.result + ")", { color: RESULT_COLOR[w.result] }),
+          bodyCell(D, w.actualDisplay, { color: w.actualDisplay === "NOT AVAILABLE" ? GOLD : undefined }),
+          bodyCell(D, w.requiredDisplay + (w.marginDisplay !== "—" ? " (" + w.marginDisplay + ")" : "")),
           resultCell(D, rs.verdict),
         ],
       });
@@ -430,28 +416,6 @@
     row("WINTER NIGHT OPERATION PLANNED", nightOps.winterNightOps === "yes" ? "Yes" : nightOps.winterNightOps === "no" ? "No" : "Unknown / not specified",
       { color: nightOps.winterNightOps === "unknown" ? GOLD : undefined });
     return table(D, rows);
-  }
-
-  function fboTable(D, fbo) {
-    var headerRow = new D.TableRow({
-      children: [headerCell(D, "FBO", 25), headerCell(D, "PHONE", 20), headerCell(D, "FUEL", 25), headerCell(D, "SERVICES", 30)],
-    });
-    if (!fbo.length) {
-      return table(D, [headerRow, new D.TableRow({
-        children: [bodyCell(D, "No FBO records on file for this airport", { italics: true, color: GOLD }), bodyCell(D, "—"), bodyCell(D, "—"), bodyCell(D, "—")],
-      })]);
-    }
-    var rows = fbo.map(function (f) {
-      return new D.TableRow({
-        children: [
-          bodyCell(D, f.name, { bold: true }),
-          bodyCell(D, f.phone, { color: f.phone === "CONFIRM" ? GOLD : undefined, bold: f.phone === "CONFIRM" }),
-          bodyCell(D, f.fuel, { color: f.fuel === "CONFIRM" ? GOLD : undefined, bold: f.fuel === "CONFIRM" }),
-          bodyCell(D, f.services, { color: f.services === "CONFIRM" ? GOLD : undefined, bold: f.services === "CONFIRM" }),
-        ],
-      });
-    });
-    return table(D, [headerRow].concat(rows));
   }
 
   function findingsTable(D, findings) {

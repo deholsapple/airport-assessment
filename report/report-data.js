@@ -291,9 +291,15 @@
       });
     });
 
+    // Physical length/width/weight-bearing are displayed here purely as
+    // reference facts for the pilot's own judgment of the heavier-weight
+    // case (e.g. primary runway closed -- is the crosswind runway still
+    // usable, and how heavy) -- not a pass/fail gate. Length has no static
+    // company minimum; only hard-surface + weight-bearing class gate below.
     var runwayFacts = (rec.runways || []).map(function (rw) {
       return {
         id: rw.id,
+        length: rw.length,
         width: rw.width,
         surface: rw.surfaceDesc || rw.surface || gaps.na("Runway " + rw.id + " surface not in NASR", "Verify via Chart Supplement"),
         wtBrg: weightBearingCompact(rw) || gaps.na("Runway " + rw.id + " weight bearing not in NASR", "Verify via Chart Supplement"),
@@ -426,20 +432,27 @@
     if (nightOps.remoteUnmonitored && !nightOps.winterNightHardFlag) {
       reasons.push("Uncontrolled field with no on-field weather reporting — review before any night operation, especially in winter (FOM §6.1.6.7).");
     }
-    var marginalWeight = usable.some(function (r) {
+    // A runway only needs to be marginal on ITS OWN if there is no other
+    // runway with complete, fully-passing data -- a gap on the crosswind
+    // runway shouldn't drag the whole airport down to REVIEW when the
+    // primary runway is cleanly verified and usable on its own.
+    var anyFullyClean = usable.some(function (r) {
+      var s = r.rows.filter(function (x) { return x.id === "surface"; })[0];
       var w = r.rows.filter(function (x) { return x.id === "wtBearingDW"; })[0];
-      return w.result === "CAUTION" || w.result === "UNKNOWN";
+      return s.result === "PASS" && w.result === "PASS";
     });
-    if (marginalWeight) reasons.push("Weight-bearing data marginal or unavailable for at least one runway.");
+    if (!anyFullyClean) reasons.push("No runway has complete, verified hard-surface and weight-bearing data -- at least one usable runway has marginal or unavailable weight-bearing data.");
 
     if (reasons.length) return { bucket: BUCKET.REVIEW, reasons: reasons };
     return { bucket: BUCKET.OK, reasons: [] };
   }
 
   // -----------------------------------------------------------------------
-  // Services & FBO (Section 6) -- pilot-entered rows take priority over
-  // (and are merged with) whatever's in fbo-data.js; anything still blank
-  // prints CONFIRM.
+  // FBO -- no display section (the pilot-entered rows in the app ARE the
+  // record; re-displaying them in the report served no function). Kept
+  // here only so an unconfirmed FBO fact still logs a verification item
+  // instead of silently disappearing -- pilot-entered rows take priority
+  // over (and are merged with) whatever's in fbo-data.js.
   // -----------------------------------------------------------------------
   function buildFbo(icao, fboData, manualFbo, gaps) {
     var researched = (fboData && fboData[icao]) || [];
@@ -457,10 +470,6 @@
         ) || gaps.confirm(name + " services not confirmed", "Call to confirm services"),
       };
     });
-  }
-
-  function airnavUrl(icao) {
-    return "https://www.airnav.com/airport/" + icao;
   }
 
   // -----------------------------------------------------------------------
@@ -508,7 +517,6 @@
       determinations: determinations,
       nightOps: nightOps,
       fbo: fbo,
-      fboLookupUrl: airnavUrl(rec.icao),
       disqualifyingFindings: disqualifyingFindings,
       verificationItems: gaps.items,
       picComments: extras.picComments || "",
